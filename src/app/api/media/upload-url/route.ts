@@ -48,9 +48,12 @@ export async function POST(req: NextRequest) {
       rawKey: mediaPaths.rawKey,
       mediaId: mediaPaths.uuid,
       type,
-      status: 'ready',
       processedKeys: (mediaPaths as any).processedKeys,
       processedUrls: (mediaPaths as any).processedUrls,
+      processedKey: (mediaPaths as any).processedKey,
+      processedUrl: (mediaPaths as any).processedUrl,
+      thumbnailKey: (mediaPaths as any).thumbnailKey,
+      thumbnailUrl: (mediaPaths as any).thumbnailUrl,
     });
   } catch (error: any) {
     console.error('S3 Upload URL generation error:', error);

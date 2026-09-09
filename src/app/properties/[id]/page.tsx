@@ -29,6 +29,8 @@ import {
   Wifi,
   Dog,
   Users,
+  Video,
+  Film,
 } from 'lucide-react';
 
 export default function PropertyDetailsPage() {
@@ -219,6 +221,73 @@ export default function PropertyDetailsPage() {
               </div>
             )}
           </div>
+
+          {/* Videos & Virtual Tour Section */}
+          {((property.videos && property.videos.length > 0) || property.tourVideoUrl) && (
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                  <Video className="h-4 w-4 text-indigo-400" />
+                  <span>Walkthrough Videos & Virtual Tour</span>
+                </h2>
+                {property.videos?.length > 0 && (
+                  <span className="rounded-full bg-indigo-500/20 border border-indigo-500/30 px-2.5 py-0.5 text-[10px] font-bold text-indigo-300">
+                    {property.videos.length} Video{property.videos.length > 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
+
+              {/* Uploaded HTML5 Videos */}
+              {property.videos && property.videos.length > 0 && (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {property.videos.map((vid: any, idx: number) => {
+                    const videoUrl = typeof vid === 'string' ? vid : vid.url;
+                    const fileName = vid.fileName || `Walkthrough Video ${idx + 1}`;
+                    return (
+                      <div
+                        key={idx}
+                        className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950 p-2 space-y-2"
+                      >
+                        <div className="relative h-44 w-full overflow-hidden rounded-lg bg-black">
+                          <video
+                            src={videoUrl}
+                            controls
+                            preload="metadata"
+                            className="h-full w-full object-contain"
+                          />
+                        </div>
+                        <p className="truncate text-xs font-semibold text-slate-300 px-1" title={fileName}>
+                          {fileName}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* External Tour Link (YouTube / Cloud) */}
+              {property.tourVideoUrl && (
+                <div className="flex items-center justify-between rounded-xl border border-indigo-500/30 bg-indigo-950/20 p-3 text-xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Film className="h-5 w-5 shrink-0 text-amber-400" />
+                    <div className="min-w-0">
+                      <p className="font-bold text-white">Virtual Tour Link</p>
+                      <p className="truncate text-[11px] text-slate-400">{property.tourVideoUrl}</p>
+                    </div>
+                  </div>
+                  <a
+                    href={property.tourVideoUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 font-bold text-white hover:bg-indigo-500 transition text-[11px]"
+                  >
+                    <span>Open Tour</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Key Specs Card */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/80 p-5 shadow-lg space-y-4">

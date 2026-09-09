@@ -25,6 +25,10 @@ import {
   Star,
   Layers,
   Wand2,
+  Video as VideoIcon,
+  Film,
+  Play,
+  UploadCloud,
 } from 'lucide-react';
 import MapLocationPicker from '@/components/MapLocationPicker';
 
@@ -167,6 +171,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
 
     // Media
     images: initialData?.images || [],
+    videos: initialData?.videos || [],
     tourVideoUrl: initialData?.tourVideoUrl || '',
 
     // Status (default: paused)
@@ -178,6 +183,10 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
   const [customRule, setCustomRule] = useState('');
   const [customSafety, setCustomSafety] = useState('');
   const [newImageUrl, setNewImageUrl] = useState('');
+  const [newVideoUrl, setNewVideoUrl] = useState('');
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [videoUploadProgress, setVideoUploadProgress] = useState<{ [key: string]: number }>({});
+  const videoFileInputRef = useRef<HTMLInputElement | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
 
   // Fetch Cities
@@ -488,6 +497,114 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
     handleFormChange('images', currentImages);
   };
 
+  // Video helpers
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      setUploadingVideo(true);
+      const fileList = Array.from(files);
+      const newVideos = [...(formData.videos || [])];
+
+      for (const file of fileList) {
+        if (file.size > 100 * 1024 * 1024) {
+          alert(`File "${file.name}" exceeds maximum allowed size (100MB).`);
+          continue;
+        }
+
+        const fileId = `${file.name}-${Date.now()}`;
+        setVideoUploadProgress((prev) => ({ ...prev, [fileId]: 0 }));
+
+        // 1. Request presigned upload URL
+        const presignRes = await fetch('/api/media/upload-url', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: file.name,
+            fileType: file.type || 'video/mp4',
+            mediaType: 'video',
+          }),
+        });
+
+        if (!presignRes.ok) {
+          const errData = await presignRes.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to initialize S3 video upload');
+        }
+
+        const { uploadUrl, publicUrl, rawKey, processedKey, processedUrl, thumbnailKey, thumbnailUrl } =
+          await presignRes.json();
+
+        // 2. Direct PUT to S3 with progress
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', uploadUrl, true);
+          xhr.setRequestHeader('Content-Type', file.type || 'video/mp4');
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              setVideoUploadProgress((prev) => ({ ...prev, [fileId]: percent }));
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status === 200 || xhr.status === 204) {
+              resolve();
+            } else {
+              reject(new Error(`S3 upload failed with status ${xhr.status}`));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error('Network error during video S3 upload'));
+          xhr.send(file);
+        });
+
+        // 3. Append to property videos
+        const newVidObj = {
+          url: publicUrl,
+          fileName: file.name,
+          sizeBytes: file.size,
+          rawKey,
+          processedKey,
+          processedUrl,
+          thumbnailKey,
+          thumbnailUrl,
+          type: 'video',
+          status: 'ready',
+        };
+
+        newVideos.push(newVidObj);
+        handleFormChange('videos', [...newVideos]);
+      }
+    } catch (err: any) {
+      alert(`Video upload note: ${err.message}. You can also paste video URLs directly.`);
+    } finally {
+      setUploadingVideo(false);
+      setVideoUploadProgress({});
+      if (videoFileInputRef.current) videoFileInputRef.current.value = '';
+    }
+  };
+
+  const handleAddVideoUrl = () => {
+    if (!newVideoUrl.trim()) return;
+    const currentVideos = formData.videos || [];
+    const newVidObj = {
+      url: newVideoUrl.trim(),
+      fileName: `video_${currentVideos.length + 1}.mp4`,
+      type: 'video',
+      status: 'ready',
+    };
+    handleFormChange('videos', [...currentVideos, newVidObj]);
+    setNewVideoUrl('');
+  };
+
+  const handleRemoveVideo = (index: number) => {
+    const currentVideos = [...(formData.videos || [])];
+    currentVideos.splice(index, 1);
+    handleFormChange('videos', currentVideos);
+  };
+
   // Validation Check
   const getValidationStatus = () => {
     const errors: { tab: string; field: string }[] = [];
@@ -592,6 +709,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
         },
         allowWhatsappContact: Boolean(formData.allowWhatsappContact),
         images: formData.images || [],
+        videos: formData.videos || [],
         tourVideoUrl: formData.tourVideoUrl || undefined,
         status: formData.status || 'paused',
       };
@@ -1599,89 +1717,92 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
         {/* TAB 6: PHOTOS & MEDIA */}
         {/* ========================================================================= */}
         {activeTab === 'media' && (
-          <div className="space-y-5 animate-in fade-in duration-200">
+          <div className="space-y-8 animate-in fade-in duration-200">
+            {/* Header */}
             <div className="border-b border-slate-800 pb-3">
               <h2 className="text-base font-bold text-white flex items-center gap-2">
                 <ImageIcon className="h-5 w-5 text-indigo-400" />
-                Property Photos & Video
+                Property Photos & Video Walkthroughs
               </h2>
               <p className="text-xs text-slate-400">
-                Add photo URLs or media links. The first image is set as the cover photo by default.
+                Attach property photos and video tours. Visual media significantly increases listing engagement.
               </p>
             </div>
 
-            {/* Upload or Add Image URL Box */}
-            <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
-              {/* Direct S3 Upload Button */}
-              <div>
-                <input
-                  type="file"
-                  ref={fileInputRef}
-                  onChange={handleFileUpload}
-                  multiple
-                  accept="image/*"
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploadingImage}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-indigo-500/40 bg-indigo-950/30 py-3.5 px-4 text-xs font-bold text-indigo-300 hover:border-indigo-400 hover:bg-indigo-900/40 transition active-press disabled:opacity-60"
-                >
-                  {uploadingImage ? (
-                    <>
-                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-                      <span>Uploading to S3 Bucket...</span>
-                    </>
-                  ) : (
-                    <>
-                      <ImageIcon className="h-4 w-4 text-indigo-400" />
-                      <span>📷 Upload Photos from Camera / Gallery (Direct S3)</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="h-px flex-1 bg-slate-800" />
-                <span className="text-[10px] uppercase font-bold text-slate-500">or enter image URL</span>
-                <div className="h-px flex-1 bg-slate-800" />
-              </div>
-
-              {/* Paste URL */}
-              <div className="flex gap-2">
-                <input
-                  type="url"
-                  value={newImageUrl}
-                  onChange={(e) => setNewImageUrl(e.target.value)}
-                  placeholder="https://images.unsplash.com/... or image URL"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleAddImage}
-                  className="flex shrink-0 items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-3 text-xs font-bold text-white hover:bg-indigo-500 transition"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Add URL</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Image Gallery List */}
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-200">
-                  Gallery Photos ({formData.images?.length || 0})
-                </span>
+            {/* SECTION 1: PHOTOS */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+                  <ImageIcon className="h-4 w-4" />
+                  <span>1. Property Photos ({formData.images?.length || 0})</span>
+                </h3>
                 <span className="text-[11px] text-slate-400">
-                  Tap &quot;Set Cover&quot; to choose the main listing picture
+                  First image or selected cover is shown as primary listing banner
                 </span>
               </div>
 
+              {/* Upload or Add Image URL Box */}
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
+                {/* Direct S3 Upload Button */}
+                <div>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    multiple
+                    accept="image/*"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingImage}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-indigo-500/40 bg-indigo-950/30 py-3.5 px-4 text-xs font-bold text-indigo-300 hover:border-indigo-400 hover:bg-indigo-900/40 transition active-press disabled:opacity-60"
+                  >
+                    {uploadingImage ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                        <span>Uploading Photos to S3 Bucket...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ImageIcon className="h-4 w-4 text-indigo-400" />
+                        <span>📷 Upload Photos from Camera / Gallery (Direct S3)</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="h-px flex-1 bg-slate-800" />
+                  <span className="text-[10px] uppercase font-bold text-slate-500">or enter image URL</span>
+                  <div className="h-px flex-1 bg-slate-800" />
+                </div>
+
+                {/* Paste URL */}
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={newImageUrl}
+                    onChange={(e) => setNewImageUrl(e.target.value)}
+                    placeholder="https://images.unsplash.com/... or image URL"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddImage}
+                    className="flex shrink-0 items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-3 text-xs font-bold text-white hover:bg-indigo-500 transition"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Add Photo</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Image Gallery List */}
               {formData.images?.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center text-xs text-slate-500">
-                  No photos added yet. You can paste image links above.
+                <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-xs text-slate-500">
+                  No photos added yet. Upload high-res photos or paste image links above.
                 </div>
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
@@ -1736,18 +1857,165 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               )}
             </div>
 
-            {/* Tour Video URL (Optional) */}
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-300">
-                Tour Video URL (YouTube / Cloud Link) <span className="text-slate-500">(Optional)</span>
-              </label>
+            {/* SECTION 2: VIDEOS & TOURS */}
+            <div className="space-y-4 pt-4 border-t border-slate-800">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
+                  <VideoIcon className="h-4 w-4 text-indigo-400" />
+                  <span>2. Walkthrough Videos ({formData.videos?.length || 0})</span>
+                </h3>
+                <span className="text-[11px] text-slate-400">
+                  Supported formats: MP4, WebM, MOV (Max 100MB per file)
+                </span>
+              </div>
+
+              {/* Upload or Add Video Box */}
+              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
+                {/* Direct Video S3 Upload */}
+                <div>
+                  <input
+                    type="file"
+                    ref={videoFileInputRef}
+                    onChange={handleVideoUpload}
+                    multiple
+                    accept="video/mp4,video/webm,video/quicktime,video/*"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => videoFileInputRef.current?.click()}
+                    disabled={uploadingVideo}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-purple-500/40 bg-purple-950/20 py-3.5 px-4 text-xs font-bold text-purple-300 hover:border-purple-400 hover:bg-purple-900/30 transition active-press disabled:opacity-60"
+                  >
+                    {uploadingVideo ? (
+                      <>
+                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
+                        <span>Uploading Video to S3 Bucket...</span>
+                      </>
+                    ) : (
+                      <>
+                        <VideoIcon className="h-4 w-4 text-purple-400" />
+                        <span>🎥 Upload Property Video Tour (Direct S3)</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Progress bars if uploading */}
+                  {Object.keys(videoUploadProgress).length > 0 && (
+                    <div className="mt-2 space-y-1.5">
+                      {Object.entries(videoUploadProgress).map(([name, progress]) => (
+                        <div key={name} className="space-y-1 text-xs">
+                          <div className="flex justify-between text-[11px] text-purple-300">
+                            <span className="truncate max-w-[200px]">{name}</span>
+                            <span>{progress}%</span>
+                          </div>
+                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                            <div
+                              className="h-full bg-purple-500 transition-all duration-200"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="h-px flex-1 bg-slate-800" />
+                  <span className="text-[10px] uppercase font-bold text-slate-500">or enter direct video URL</span>
+                  <div className="h-px flex-1 bg-slate-800" />
+                </div>
+
+                {/* Paste Video URL */}
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={newVideoUrl}
+                    onChange={(e) => setNewVideoUrl(e.target.value)}
+                    placeholder="https://.../tour.mp4 (Direct Video Link)"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddVideoUrl}
+                    className="flex shrink-0 items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-3 text-xs font-bold text-white hover:bg-purple-500 transition"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Add Video</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Uploaded Video List */}
+              {formData.videos?.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-xs text-slate-500">
+                  No video tours attached yet. Upload a room/flat walkthrough video to give prospective tenants a 360° tour.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
+                  {formData.videos?.map((vid: any, idx: number) => {
+                    const videoUrl = typeof vid === 'string' ? vid : vid.url;
+                    const fileName = vid.fileName || `Video ${idx + 1}`;
+                    const sizeStr = vid.sizeBytes
+                      ? `${(vid.sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+                      : null;
+
+                    return (
+                      <div
+                        key={idx}
+                        className="relative flex flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 p-2.5 space-y-2"
+                      >
+                        <div className="relative h-40 w-full overflow-hidden rounded-lg bg-black">
+                          <video
+                            src={videoUrl}
+                            controls
+                            preload="metadata"
+                            className="h-full w-full object-contain"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 px-1">
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs font-bold text-white" title={fileName}>
+                              {fileName}
+                            </p>
+                            {sizeStr && (
+                              <p className="text-[10px] text-slate-400">{sizeStr}</p>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveVideo(idx)}
+                            className="shrink-0 rounded-lg bg-rose-600/80 p-1.5 text-white hover:bg-rose-500 transition"
+                            title="Delete Video"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* SECTION 3: YOUTUBE / CLOUD TOUR LINK */}
+            <div className="space-y-3 pt-4 border-t border-slate-800">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                <Film className="h-4 w-4 text-amber-400" />
+                <span>3. Optional External Tour Link (YouTube / Cloud Link)</span>
+              </h3>
               <input
                 type="url"
                 value={formData.tourVideoUrl}
                 onChange={(e) => handleFormChange('tourVideoUrl', e.target.value)}
-                placeholder="https://youtube.com/watch?v=..."
+                placeholder="https://youtube.com/watch?v=... or Matterport / Cloud Link"
                 className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500"
               />
+              <p className="text-[11px] text-slate-400">
+                You can paste a YouTube walkthrough link or virtual 3D tour URL here.
+              </p>
             </div>
           </div>
         )}
@@ -1861,6 +2129,17 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
                   ) : (
                     <span className="text-rose-400 font-bold">✕ Missing</span>
                   )}
+                </div>
+
+                {/* Check 5: Media Attachments */}
+                <div
+                  onClick={() => setActiveTab('media')}
+                  className="flex cursor-pointer items-center justify-between rounded-lg bg-slate-900 p-2.5 hover:bg-slate-800 sm:col-span-2"
+                >
+                  <span className="text-slate-300">Attached Media</span>
+                  <span className="text-indigo-400 font-semibold">
+                    {formData.images?.length || 0} Photos · {formData.videos?.length || 0} Videos · {formData.tourVideoUrl ? 'Virtual Tour Added' : 'No Tour URL'}
+                  </span>
                 </div>
               </div>
             </div>
