@@ -26,6 +26,7 @@ import {
   Layers,
   Wand2,
 } from 'lucide-react';
+import MapLocationPicker from '@/components/MapLocationPicker';
 
 interface PropertyFormProps {
   initialData?: any;
@@ -290,6 +291,45 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+  };
+
+  // Map Location Select Callback from Google Maps picker
+  const handleMapLocationSelect = (loc: {
+    lat: number;
+    lng: number;
+    addressLine?: string;
+    placeId?: string;
+    localityName?: string;
+    cityName?: string;
+  }) => {
+    handleFormChange('lat', loc.lat);
+    handleFormChange('lng', loc.lng);
+    if (loc.placeId) {
+      handleFormChange('googleMapPlaceId', loc.placeId);
+    }
+    if (loc.addressLine && (!formData.addressLine || formData.addressLine.trim() === '')) {
+      handleFormChange('addressLine', loc.addressLine);
+    }
+    // Match city if recognized
+    if (loc.cityName && cities.length > 0) {
+      const matchedCity = cities.find(
+        (c) => c.name.toLowerCase() === loc.cityName?.toLowerCase()
+      );
+      if (matchedCity && matchedCity._id !== formData.cityId) {
+        handleFormChange('cityId', matchedCity._id);
+      }
+    }
+    // Match locality if recognized
+    if (loc.localityName && localities.length > 0) {
+      const matchedLoc = localities.find(
+        (l) =>
+          l.name.toLowerCase().includes(loc.localityName?.toLowerCase() || '') ||
+          loc.localityName?.toLowerCase().includes(l.name.toLowerCase())
+      );
+      if (matchedLoc && matchedLoc._id !== formData.localityId) {
+        handleFormChange('localityId', matchedLoc._id);
+      }
+    }
   };
 
   // AI / Smart Title & Description Generator Helper
@@ -1130,30 +1170,25 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
         {/* ========================================================================= */}
         {activeTab === 'location' && (
           <div className="space-y-5 animate-in fade-in duration-200">
-            <div className="border-b border-slate-800 pb-3 flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <MapPin className="h-5 w-5 text-indigo-400" />
-                  Location & Address
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Accurate coordinates are required for geo-search indexing
-                </p>
-              </div>
-
-              {/* GPS Fetch Button */}
-              <button
-                type="button"
-                onClick={handleFetchGps}
-                disabled={gpsLoading}
-                className="flex items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-600/20 px-3 py-2 text-xs font-bold text-indigo-300 hover:bg-indigo-600 hover:text-white transition shadow-sm active-press"
-              >
-                <Compass className={`h-4 w-4 text-indigo-400 ${gpsLoading ? 'animate-spin' : ''}`} />
-                <span>{gpsLoading ? 'Fetching GPS...' : '📍 Use Current GPS'}</span>
-              </button>
+            <div className="border-b border-slate-800 pb-3">
+              <h2 className="text-base font-bold text-white flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-indigo-400" />
+                Interactive Map & Location
+              </h2>
+              <p className="text-xs text-slate-400">
+                Search place or drag the pin on the map. Coordinates and location details will be captured automatically.
+              </p>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {/* Interactive Google Map Component */}
+            <MapLocationPicker
+              initialLat={formData.lat}
+              initialLng={formData.lng}
+              onLocationSelect={handleMapLocationSelect}
+            />
+
+            {/* Address Details & Location Selectors */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 pt-2">
               {/* City (Required) */}
               <div>
                 <label className="mb-1 block text-xs font-bold text-slate-200">
@@ -1198,59 +1233,14 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               {/* Address Line (Required) */}
               <div className="sm:col-span-2">
                 <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Full Address Line <span className="text-rose-400">* (Required)</span>
+                  Detailed Address Line / Flat & Building Details <span className="text-rose-400">* (Required)</span>
                 </label>
                 <textarea
                   rows={2}
                   value={formData.addressLine}
                   onChange={(e) => handleFormChange('addressLine', e.target.value)}
-                  placeholder="e.g. Flat 302, Green Orchid Apartments, 14th Main, Sector 4, HSR Layout"
+                  placeholder="e.g. Flat 302, Wing B, Green Orchid Apartments, Sector 4"
                   required
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              {/* Coordinates [Lng, Lat] (Required) */}
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Longitude (lng) <span className="text-rose-400">* (Required)</span>
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.lng}
-                  onChange={(e) => handleFormChange('lng', e.target.value)}
-                  placeholder="e.g. 77.6385"
-                  required
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Latitude (lat) <span className="text-rose-400">* (Required)</span>
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={formData.lat}
-                  onChange={(e) => handleFormChange('lat', e.target.value)}
-                  placeholder="e.g. 12.9121"
-                  required
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                />
-              </div>
-
-              {/* Google Maps Place ID (Optional) */}
-              <div className="sm:col-span-2">
-                <label className="mb-1 block text-xs font-medium text-slate-300">
-                  Google Maps Place ID or Landmark Reference <span className="text-slate-500">(Optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.googleMapPlaceId}
-                  onChange={(e) => handleFormChange('googleMapPlaceId', e.target.value)}
-                  placeholder="e.g. Near HSR BDA Complex, opp. Starbucks"
                   className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
                 />
               </div>
