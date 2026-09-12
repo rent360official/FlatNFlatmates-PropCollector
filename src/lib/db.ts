@@ -1,4 +1,8 @@
 import mongoose from 'mongoose';
+import '@/models/City';
+import '@/models/Locality';
+import '@/models/User';
+import '@/models/Property';
 
 interface MongooseCached {
   conn: typeof mongoose | null;
