@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
       ContentType: fileType,
     });
 
-    const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 600 });
+    const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: 3600 });
     const publicUrl = `https://${config.bucketName}.s3.${config.region}.amazonaws.com/${mediaPaths.rawKey}`;
 
     return NextResponse.json({

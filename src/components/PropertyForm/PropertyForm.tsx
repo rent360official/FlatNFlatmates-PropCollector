@@ -1898,7 +1898,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
                   <span>2. Walkthrough Videos ({formData.videos?.length || 0})</span>
                 </h3>
                 <span className="text-[11px] text-slate-400">
-                  Supported formats: MP4, WebM, MOV (Max 100MB per file)
+                  Supported formats: MP4, WebM, MOV (Max 10 minutes duration)
                 </span>
               </div>
 
