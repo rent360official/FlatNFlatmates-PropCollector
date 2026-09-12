@@ -220,11 +220,14 @@ export async function POST(request: NextRequest) {
 
     // 3. Format images array cleanly
     const formattedImages = (images || []).map((img: any, idx: number) => ({
-      url: typeof img === 'string' ? img : img.url,
+      url: typeof img === 'string' ? img : (img.processedUrls?.medium || img.url),
       isCover: img.isCover ?? idx === 0,
       fileName: img.fileName || `photo_${idx + 1}`,
+      rawKey: typeof img === 'object' ? img.rawKey : undefined,
+      processedUrls: typeof img === 'object' ? img.processedUrls : undefined,
+      processedKeys: typeof img === 'object' ? img.processedKeys : undefined,
       type: 'image',
-      status: 'ready',
+      status: (typeof img === 'object' && img.status) || 'ready',
       order: idx,
     }));
 
