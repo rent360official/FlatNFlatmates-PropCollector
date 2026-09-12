@@ -270,15 +270,27 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
   };
 
   const handleFormChange = (key: string, value: any) => {
-    const updated = { ...formData, [key]: value };
-    setFormData(updated);
-    saveDraftToLocalStorage(updated, newOwner);
+    setFormData((prev: any) => {
+      const updated = { ...prev, [key]: value };
+      saveDraftToLocalStorage(updated, newOwner);
+      return updated;
+    });
+  };
+
+  const handleMultipleFormChange = (updates: Record<string, any>) => {
+    setFormData((prev: any) => {
+      const updated = { ...prev, ...updates };
+      saveDraftToLocalStorage(updated, newOwner);
+      return updated;
+    });
   };
 
   const handleNewOwnerChange = (key: string, value: any) => {
-    const updated = { ...newOwner, [key]: value };
-    setNewOwner(updated);
-    saveDraftToLocalStorage(formData, updated);
+    setNewOwner((prev: any) => {
+      const updated = { ...prev, [key]: value };
+      saveDraftToLocalStorage(formData, updated);
+      return updated;
+    });
   };
 
   // GPS Coordinates Fetcher
@@ -291,8 +303,10 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
-        handleFormChange('lat', parseFloat(latitude.toFixed(6)));
-        handleFormChange('lng', parseFloat(longitude.toFixed(6)));
+        handleMultipleFormChange({
+          lat: parseFloat(latitude.toFixed(6)),
+          lng: parseFloat(longitude.toFixed(6)),
+        });
         setGpsLoading(false);
       },
       (err) => {
@@ -312,34 +326,43 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
     localityName?: string;
     cityName?: string;
   }) => {
-    handleFormChange('lat', loc.lat);
-    handleFormChange('lng', loc.lng);
-    if (loc.placeId) {
-      handleFormChange('googleMapPlaceId', loc.placeId);
-    }
-    if (loc.addressLine && (!formData.addressLine || formData.addressLine.trim() === '')) {
-      handleFormChange('addressLine', loc.addressLine);
-    }
-    // Match city if recognized
-    if (loc.cityName && cities.length > 0) {
-      const matchedCity = cities.find(
-        (c) => c.name.toLowerCase() === loc.cityName?.toLowerCase()
-      );
-      if (matchedCity && matchedCity._id !== formData.cityId) {
-        handleFormChange('cityId', matchedCity._id);
+    setFormData((prev: any) => {
+      const updates: Record<string, any> = {
+        lat: loc.lat,
+        lng: loc.lng,
+      };
+
+      if (loc.placeId) {
+        updates.googleMapPlaceId = loc.placeId;
       }
-    }
-    // Match locality if recognized
-    if (loc.localityName && localities.length > 0) {
-      const matchedLoc = localities.find(
-        (l) =>
-          l.name.toLowerCase().includes(loc.localityName?.toLowerCase() || '') ||
-          loc.localityName?.toLowerCase().includes(l.name.toLowerCase())
-      );
-      if (matchedLoc && matchedLoc._id !== formData.localityId) {
-        handleFormChange('localityId', matchedLoc._id);
+      if (loc.addressLine && (!prev.addressLine || prev.addressLine.trim() === '')) {
+        updates.addressLine = loc.addressLine;
       }
-    }
+      // Match city if recognized
+      if (loc.cityName && cities.length > 0) {
+        const matchedCity = cities.find(
+          (c) => c.name.toLowerCase() === loc.cityName?.toLowerCase()
+        );
+        if (matchedCity && matchedCity._id !== prev.cityId) {
+          updates.cityId = matchedCity._id;
+        }
+      }
+      // Match locality if recognized
+      if (loc.localityName && localities.length > 0) {
+        const matchedLoc = localities.find(
+          (l) =>
+            l.name.toLowerCase().includes(loc.localityName?.toLowerCase() || '') ||
+            loc.localityName?.toLowerCase().includes(l.name.toLowerCase())
+        );
+        if (matchedLoc && matchedLoc._id !== prev.localityId) {
+          updates.localityId = matchedLoc._id;
+        }
+      }
+
+      const updated = { ...prev, ...updates };
+      saveDraftToLocalStorage(updated, newOwner);
+      return updated;
+    });
   };
 
   // AI / Smart Title & Description Generator Helper
