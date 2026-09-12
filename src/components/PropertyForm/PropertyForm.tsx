@@ -444,8 +444,10 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
 
         // 3. Append to property images
         const currentImages = formData.images || [];
+        const previewUrl = URL.createObjectURL(file);
         const newImgObj = {
-          url: publicUrl,
+          url: processedUrls?.medium || publicUrl,
+          previewUrl,
           rawKey,
           processedKeys,
           processedUrls,
@@ -1828,7 +1830,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {formData.images?.map((img: any, idx: number) => {
-                    const imgUrl = typeof img === 'string' ? img : img.url;
+                    const imgUrl = typeof img === 'string' ? img : (img.previewUrl || img.url);
                     const isCover = img.isCover;
 
                     return (
@@ -1843,6 +1845,16 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
                           src={imgUrl}
                           alt={`Photo ${idx + 1}`}
                           className="h-32 w-full object-cover"
+                          onError={(e) => {
+                            const target = e.currentTarget;
+                            const currentSrc = target.src;
+                            if (!target.dataset.retried) {
+                              target.dataset.retried = "1";
+                              setTimeout(() => {
+                                target.src = `${currentSrc}?t=${Date.now()}`;
+                              }, 1500);
+                            }
+                          }}
                         />
 
                         {/* Cover Badge */}
