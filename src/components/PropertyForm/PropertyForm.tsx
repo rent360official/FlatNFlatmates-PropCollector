@@ -29,6 +29,7 @@ import {
   Film,
   Play,
   UploadCloud,
+  Clock,
 } from 'lucide-react';
 import MapLocationPicker from '@/components/MapLocationPicker';
 
@@ -651,8 +652,11 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
   const isValid = validationErrors.length === 0;
 
   // Submit Handler
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (targetStatusOrEvent?: React.FormEvent | string) => {
+    if (targetStatusOrEvent && typeof targetStatusOrEvent === 'object' && 'preventDefault' in targetStatusOrEvent) {
+      targetStatusOrEvent.preventDefault();
+    }
+    const targetStatus = typeof targetStatusOrEvent === 'string' ? targetStatusOrEvent : undefined;
     setSubmitError('');
     setSubmitSuccess('');
 
@@ -711,7 +715,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
         images: formData.images || [],
         videos: formData.videos || [],
         tourVideoUrl: formData.tourVideoUrl || undefined,
-        status: formData.status || 'paused',
+        status: (typeof targetStatus === 'string' ? targetStatus : undefined) || formData.status || 'paused',
       };
 
       if (ownerMode === 'select') {
@@ -743,9 +747,12 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
         throw new Error(data.error || 'Failed to save property');
       }
 
+      const isUnapproved = payload.status === 'pending_owner_approval';
       setSubmitSuccess(
         isEditMode
           ? 'Property details updated successfully!'
+          : isUnapproved
+          ? 'Property successfully registered in PENDING OWNER APPROVAL status!'
           : 'Property successfully registered in database with PAUSED status!'
       );
 
@@ -784,7 +791,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {!isEditMode && (
             <button
               type="button"
@@ -793,21 +800,35 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               title="Auto-generate Title & Description from selected specs"
             >
               <Wand2 className="h-3.5 w-3.5 text-indigo-400" />
-              <span>Smart Fill Content</span>
+              <span>Smart Fill</span>
+            </button>
+          )}
+
+          {!isEditMode && (
+            <button
+              type="button"
+              onClick={() => handleSubmit('pending_owner_approval')}
+              disabled={loading}
+              className="flex items-center gap-1.5 rounded-xl border border-violet-500/40 bg-violet-600/20 px-3.5 py-2.5 text-xs font-bold text-violet-200 hover:bg-violet-600/30 transition disabled:opacity-60 active-press"
+              title="Save with status 'pending_owner_approval'"
+            >
+              <Clock className="h-4 w-4 text-violet-400" />
+              <span>Register Unapproved</span>
             </button>
           )}
 
           <button
-            onClick={handleSubmit}
+            type="button"
+            onClick={() => handleSubmit(isEditMode ? undefined : 'paused')}
             disabled={loading}
-            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-5 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 hover:from-indigo-500 hover:to-purple-500 transition disabled:opacity-60 active-press"
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 px-4 py-2.5 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 hover:from-indigo-500 hover:to-purple-500 transition disabled:opacity-60 active-press"
           >
             {loading ? (
               <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
             ) : (
               <>
                 <Save className="h-4 w-4" />
-                <span>{isEditMode ? 'Save Changes' : 'Submit Property'}</span>
+                <span>{isEditMode ? 'Save Changes' : 'Register'}</span>
               </>
             )}
           </button>
@@ -923,7 +944,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
                   {/* Phone Number (Mandatory) */}
                   <div>
                     <label className="mb-1 block text-xs font-bold text-slate-200">
-                      Owner Phone Number <span className="text-rose-400">* (Mandatory)</span>
+                      Owner Phone Number <span className={newOwner.phone?.trim() ? "text-emerald-400" : "text-rose-400"}>* (Mandatory)</span>
                     </label>
                     <input
                       type="tel"
@@ -1142,7 +1163,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               {/* Title (Required) */}
               <div className="sm:col-span-2">
                 <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Property Listing Title <span className="text-rose-400">* (Required)</span>
+                  Property Listing Title <span className={formData.title?.trim() ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
                 </label>
                 <input
                   type="text"
@@ -1157,7 +1178,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               {/* BHK Configuration (Required) */}
               <div>
                 <label className="mb-1 block text-xs font-bold text-slate-200">
-                  BHK Configuration <span className="text-rose-400">* (Required)</span>
+                  BHK Configuration <span className={formData.bhkConfig ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
                 </label>
                 <select
                   value={formData.bhkConfig}
@@ -1175,7 +1196,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               {/* Property Type (Required) */}
               <div>
                 <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Property Type <span className="text-rose-400">* (Required)</span>
+                  Property Type <span className={formData.propertyType ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
                 </label>
                 <select
                   value={formData.propertyType}
@@ -1192,7 +1213,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               {/* Furnishing Status (Required) */}
               <div>
                 <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Furnishing Status <span className="text-rose-400">* (Required)</span>
+                  Furnishing Status <span className={formData.furnishingStatus ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
                 </label>
                 <select
                   value={formData.furnishingStatus}
@@ -1208,7 +1229,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               {/* Tenant Preference (Required) */}
               <div>
                 <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Tenant Preference <span className="text-rose-400">* (Required)</span>
+                  Tenant Preference <span className={formData.tenantPreference ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
                 </label>
                 <select
                   value={formData.tenantPreference}
@@ -1310,7 +1331,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               {/* City (Required) */}
               <div>
                 <label className="mb-1 block text-xs font-bold text-slate-200">
-                  City <span className="text-rose-400">* (Required)</span>
+                  City <span className={formData.cityId ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
                 </label>
                 <select
                   value={formData.cityId}
@@ -1329,7 +1350,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               {/* Locality (Required) */}
               <div>
                 <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Locality / Area <span className="text-rose-400">* (Required)</span>
+                  Locality / Area <span className={formData.localityId ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
                 </label>
                 <select
                   value={formData.localityId}
@@ -1351,7 +1372,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               {/* Address Line (Required) */}
               <div className="sm:col-span-2">
                 <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Detailed Address Line / Flat & Building Details <span className="text-rose-400">* (Required)</span>
+                  Detailed Address Line / Flat & Building Details <span className={formData.addressLine?.trim() ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
                 </label>
                 <textarea
                   rows={2}
@@ -1385,7 +1406,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               {/* Rent Amount (Required) */}
               <div>
                 <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Monthly Rent (₹) <span className="text-rose-400">* (Required)</span>
+                  Monthly Rent (₹) <span className={formData.rentAmount !== '' && Number(formData.rentAmount) >= 0 ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
                 </label>
                 <div className="relative">
                   <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-bold">
@@ -1405,7 +1426,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               {/* Deposit Amount (Required) */}
               <div>
                 <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Security Deposit (₹) <span className="text-rose-400">* (Required)</span>
+                  Security Deposit (₹) <span className={formData.depositAmount !== '' && Number(formData.depositAmount) >= 0 ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
                 </label>
                 <div className="relative">
                   <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-bold">
@@ -2039,7 +2060,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
             <div>
               <div className="mb-1.5 flex items-center justify-between">
                 <label className="block text-xs font-bold text-slate-200">
-                  Full Property Description <span className="text-rose-400">* (Required)</span>
+                  Full Property Description <span className={formData.description?.trim() ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
                 </label>
                 <button
                   type="button"
@@ -2144,23 +2165,67 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               </div>
             </div>
 
-            {/* Submit Button */}
+            {/* Submit Action Buttons */}
             <div className="pt-2">
-              <button
-                type="button"
-                onClick={handleSubmit}
-                disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 py-4 text-sm font-bold text-white shadow-xl shadow-indigo-600/30 hover:from-indigo-500 hover:to-purple-500 transition disabled:opacity-60 active-press"
-              >
-                {loading ? (
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                ) : (
-                  <>
-                    <Save className="h-5 w-5" />
-                    <span>{isEditMode ? 'Save Property Updates' : 'Confirm & Register Property (PAUSED)'}</span>
-                  </>
-                )}
-              </button>
+              {isEditMode ? (
+                <button
+                  type="button"
+                  onClick={() => handleSubmit()}
+                  disabled={loading}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 py-4 text-sm font-bold text-white shadow-xl shadow-indigo-600/30 hover:from-indigo-500 hover:to-purple-500 transition disabled:opacity-60 active-press"
+                >
+                  {loading ? (
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  ) : (
+                    <>
+                      <Save className="h-5 w-5" />
+                      <span>Save Property Updates</span>
+                    </>
+                  )}
+                </button>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Option 1: Register Unapproved */}
+                  <button
+                    type="button"
+                    onClick={() => handleSubmit('pending_owner_approval')}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-violet-500/40 bg-gradient-to-r from-violet-950/80 to-purple-900/60 p-4 text-sm font-bold text-violet-200 shadow-lg hover:border-violet-500 hover:bg-violet-900/60 transition disabled:opacity-60 active-press"
+                  >
+                    {loading ? (
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-violet-300 border-t-transparent" />
+                    ) : (
+                      <>
+                        <Clock className="h-5 w-5 text-violet-400" />
+                        <div className="text-left">
+                          <div className="text-xs uppercase tracking-wider text-violet-300">Option A</div>
+                          <div>Register Unapproved</div>
+                        </div>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Option 2: Register Paused */}
+                  <button
+                    type="button"
+                    onClick={() => handleSubmit('paused')}
+                    disabled={loading}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 p-4 text-sm font-bold text-white shadow-xl shadow-indigo-600/30 hover:from-indigo-500 hover:to-purple-500 transition disabled:opacity-60 active-press"
+                  >
+                    {loading ? (
+                      <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    ) : (
+                      <>
+                        <Save className="h-5 w-5" />
+                        <div className="text-left">
+                          <div className="text-xs uppercase tracking-wider text-indigo-200">Option B</div>
+                          <div>Register (Paused)</div>
+                        </div>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

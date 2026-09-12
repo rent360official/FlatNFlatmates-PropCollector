@@ -89,7 +89,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Metrics Row */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 sm:gap-4">
         {/* Total Collected */}
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 backdrop-blur-sm">
           <div className="flex items-center justify-between">
@@ -104,10 +104,24 @@ export default function DashboardPage() {
           <p className="mt-0.5 text-[11px] text-slate-500">In database</p>
         </div>
 
-        {/* Paused Properties (Pending Review) */}
+        {/* Active Properties */}
+        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 backdrop-blur-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-emerald-300">Active</span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
+              <CheckCircle className="h-4 w-4" />
+            </div>
+          </div>
+          <div className="mt-2 text-2xl font-bold text-emerald-300">
+            {loading ? '-' : stats?.activeProperties ?? 0}
+          </div>
+          <p className="mt-0.5 text-[11px] text-emerald-400/70">Live on platform</p>
+        </div>
+
+        {/* Paused Properties */}
         <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 backdrop-blur-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-amber-300">Paused (Pending)</span>
+            <span className="text-xs font-medium text-amber-300">Paused</span>
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
               <PauseCircle className="h-4 w-4" />
             </div>
@@ -115,25 +129,25 @@ export default function DashboardPage() {
           <div className="mt-2 text-2xl font-bold text-amber-300">
             {loading ? '-' : stats?.pausedProperties ?? 0}
           </div>
-          <p className="mt-0.5 text-[11px] text-amber-400/70">Collector default</p>
+          <p className="mt-0.5 text-[11px] text-amber-400/70">Paused listings</p>
         </div>
 
-        {/* Added Today */}
-        <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4 backdrop-blur-sm">
+        {/* Pending Owner Approval */}
+        <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-4 backdrop-blur-sm">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-emerald-300">Added Today</span>
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
+            <span className="text-xs font-medium text-violet-300">Pending Approval</span>
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-500/20 text-violet-400">
               <Clock className="h-4 w-4" />
             </div>
           </div>
-          <div className="mt-2 text-2xl font-bold text-emerald-300">
-            {loading ? '-' : stats?.todayCount ?? 0}
+          <div className="mt-2 text-2xl font-bold text-violet-300">
+            {loading ? '-' : stats?.pendingApprovalProperties ?? 0}
           </div>
-          <p className="mt-0.5 text-[11px] text-emerald-400/70">Past 24 hours</p>
+          <p className="mt-0.5 text-[11px] text-violet-400/70">Awaiting owner</p>
         </div>
 
         {/* Added This Week */}
-        <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-4 backdrop-blur-sm">
+        <div className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-4 backdrop-blur-sm col-span-2 sm:col-span-1">
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-purple-300">Added This Week</span>
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/20 text-purple-400">
@@ -257,14 +271,20 @@ export default function DashboardPage() {
                       <div className="absolute top-2 left-2">
                         <span
                           className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold shadow-sm backdrop-blur-md ${
-                            prop.status === 'paused'
+                            prop.status === 'pending_owner_approval'
+                              ? 'bg-violet-600/90 text-white'
+                              : prop.status === 'paused'
                               ? 'bg-amber-500/80 text-white'
                               : prop.status === 'active'
                               ? 'bg-emerald-500/80 text-white'
                               : 'bg-slate-700/80 text-slate-200'
                           }`}
                         >
-                          {prop.status ? prop.status.toUpperCase() : 'PAUSED'}
+                          {prop.status === 'pending_owner_approval'
+                            ? 'PENDING APPROVAL'
+                            : prop.status
+                            ? prop.status.toUpperCase()
+                            : 'PAUSED'}
                         </span>
                       </div>
                       <div className="absolute bottom-2 right-2 rounded-lg bg-slate-950/80 px-2 py-0.5 text-xs font-bold text-indigo-300 backdrop-blur-md">

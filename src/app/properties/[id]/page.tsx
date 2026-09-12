@@ -63,7 +63,7 @@ export default function PropertyDetailsPage() {
     if (!property) return;
     try {
       setStatusUpdating(true);
-      const newStatus = property.status === 'paused' ? 'active' : 'paused';
+      const newStatus = property.status === 'active' ? 'paused' : 'active';
       const res = await fetch(`/api/properties/${property._id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -107,6 +107,8 @@ export default function PropertyDetailsPage() {
   }
 
   const isPaused = property.status === 'paused';
+  const isPendingApproval = property.status === 'pending_owner_approval';
+  const isActive = property.status === 'active';
   const coverImg =
     property.images?.find((i: any) => i.isCover)?.url ||
     property.images?.[0]?.url ||
@@ -127,12 +129,14 @@ export default function PropertyDetailsPage() {
             <div className="flex items-center gap-2">
               <span
                 className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                  isPaused
+                  isPendingApproval
+                    ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                    : isPaused
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                     : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                 }`}
               >
-                Status: {property.status?.toUpperCase() || 'PAUSED'}
+                Status: {isPendingApproval ? 'PENDING OWNER APPROVAL' : (property.status?.toUpperCase() || 'PAUSED')}
               </span>
               <span className="text-[11px] text-slate-500">
                 ID: {property._id}
@@ -150,22 +154,29 @@ export default function PropertyDetailsPage() {
             onClick={handleToggleStatus}
             disabled={statusUpdating}
             className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition ${
-              isPaused
-                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
-                : 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+              isActive
+                ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                : isPendingApproval
+                ? 'border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20'
+                : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
             }`}
           >
             {statusUpdating ? (
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-            ) : isPaused ? (
-              <>
-                <PlayCircle className="h-3.5 w-3.5" />
-                <span>Activate</span>
-              </>
-            ) : (
+            ) : isActive ? (
               <>
                 <PauseCircle className="h-3.5 w-3.5" />
                 <span>Pause</span>
+              </>
+            ) : isPendingApproval ? (
+              <>
+                <PlayCircle className="h-3.5 w-3.5" />
+                <span>Approve & Activate</span>
+              </>
+            ) : (
+              <>
+                <PlayCircle className="h-3.5 w-3.5" />
+                <span>Activate</span>
               </>
             )}
           </button>

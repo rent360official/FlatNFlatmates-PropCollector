@@ -27,6 +27,7 @@ export async function GET() {
       totalProperties,
       pausedProperties,
       activeProperties,
+      pendingApprovalProperties,
       todayCount,
       weekCount,
       recentProperties,
@@ -34,6 +35,7 @@ export async function GET() {
       Property.countDocuments({ status: { $ne: 'removed' } }),
       Property.countDocuments({ status: 'paused' }),
       Property.countDocuments({ status: 'active' }),
+      Property.countDocuments({ status: 'pending_owner_approval' }),
       Property.countDocuments({ createdAt: { $gte: startOfToday } }),
       Property.countDocuments({ createdAt: { $gte: startOfWeek } }),
       Property.find({ status: { $ne: 'removed' } })
@@ -50,6 +52,7 @@ export async function GET() {
         totalProperties,
         pausedProperties,
         activeProperties,
+        pendingApprovalProperties,
         todayCount,
         weekCount,
       },

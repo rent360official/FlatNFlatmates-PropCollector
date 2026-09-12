@@ -279,6 +279,7 @@ export default function PropertiesListPage() {
                 {[
                   { id: 'all', label: 'All Statuses' },
                   { id: 'paused', label: 'Paused (Collector Default)' },
+                  { id: 'pending_owner_approval', label: 'Pending Owner Approval' },
                   { id: 'active', label: 'Active' },
                   { id: 'draft', label: 'Draft' },
                 ].map((s) => (
@@ -352,6 +353,8 @@ export default function PropertiesListPage() {
               'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=600&auto=format&fit=crop&q=80';
 
             const isPaused = prop.status === 'paused';
+            const isPendingApproval = prop.status === 'pending_owner_approval';
+            const isActive = prop.status === 'active';
             const isUpdating = updatingId === prop._id;
 
             return (
@@ -373,14 +376,16 @@ export default function PropertiesListPage() {
                     <div className="absolute top-2 left-2">
                       <span
                         className={`rounded-full px-2.5 py-0.5 text-[10px] font-bold shadow-md backdrop-blur-md uppercase tracking-wider ${
-                          isPaused
+                          isPendingApproval
+                            ? 'bg-violet-600/90 text-white'
+                            : isPaused
                             ? 'bg-amber-500/90 text-white'
-                            : prop.status === 'active'
+                            : isActive
                             ? 'bg-emerald-500/90 text-white'
                             : 'bg-slate-700/90 text-slate-200'
                         }`}
                       >
-                        {prop.status || 'PAUSED'}
+                        {isPendingApproval ? 'PENDING APPROVAL' : (prop.status || 'PAUSED')}
                       </span>
                     </div>
 
@@ -461,22 +466,29 @@ export default function PropertiesListPage() {
                     onClick={() => handleToggleStatus(prop._id, prop.status)}
                     disabled={isUpdating}
                     className={`flex w-full items-center justify-center gap-1.5 rounded-xl py-1.5 text-[11px] font-semibold border transition ${
-                      isPaused
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
-                        : 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                      isActive
+                        ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                        : isPendingApproval
+                        ? 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20'
+                        : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
                     }`}
                   >
                     {isUpdating ? (
                       <RefreshCw className="h-3 w-3 animate-spin" />
-                    ) : isPaused ? (
-                      <>
-                        <PlayCircle className="h-3.5 w-3.5" />
-                        <span>Activate Property</span>
-                      </>
-                    ) : (
+                    ) : isActive ? (
                       <>
                         <PauseCircle className="h-3.5 w-3.5" />
                         <span>Pause Property</span>
+                      </>
+                    ) : isPendingApproval ? (
+                      <>
+                        <PlayCircle className="h-3.5 w-3.5" />
+                        <span>Approve & Activate</span>
+                      </>
+                    ) : (
+                      <>
+                        <PlayCircle className="h-3.5 w-3.5" />
+                        <span>Activate Property</span>
                       </>
                     )}
                   </button>

@@ -74,7 +74,7 @@ export interface IProperty extends Document {
   tourVideoUrl?: string;
   googleMapPlaceId?: string;
   managementType: 'self_managed' | 'platform_managed';
-  status: 'draft' | 'active' | 'paused' | 'removed';
+  status: 'draft' | 'active' | 'paused' | 'removed' | 'pending_owner_approval';
 
   // --- Lease Flexibility ---
   availableFrom: Date;
@@ -220,7 +220,7 @@ const PropertySchema: Schema<IProperty> = new Schema(
     },
     status: {
       type: String,
-      enum: ['draft', 'active', 'paused', 'removed'],
+      enum: ['draft', 'active', 'paused', 'removed', 'pending_owner_approval'],
       default: 'paused', // Set default to paused for property collector
     },
 
