@@ -38,6 +38,22 @@ interface PropertyFormProps {
   isEditMode?: boolean;
 }
 
+export interface MediaUploadConfig {
+  maxPropertyVideos: number;
+  maxVideoSizeMb: number;
+  maxVideoDurationMinutes: number;
+  maxPropertyImages: number;
+  maxImageSizeMb: number;
+}
+
+const DEFAULT_MEDIA_CONFIG: MediaUploadConfig = {
+  maxPropertyVideos: 5,
+  maxVideoSizeMb: 5120,
+  maxVideoDurationMinutes: 10,
+  maxPropertyImages: 10,
+  maxImageSizeMb: 25,
+};
+
 const TABS = [
   { id: 'owner', label: '1. Owner Info', icon: User },
   { id: 'specs', label: '2. Basic Specs', icon: Building },
@@ -185,10 +201,24 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
   const [customSafety, setCustomSafety] = useState('');
   const [newImageUrl, setNewImageUrl] = useState('');
   const [newVideoUrl, setNewVideoUrl] = useState('');
+  const [mediaConfig, setMediaConfig] = useState<MediaUploadConfig>(DEFAULT_MEDIA_CONFIG);
+  const [imageUploadProgress, setImageUploadProgress] = useState<{ [key: string]: number }>({});
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoUploadProgress, setVideoUploadProgress] = useState<{ [key: string]: number }>({});
   const videoFileInputRef = useRef<HTMLInputElement | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
+
+  // Fetch dynamic media limits from admin config
+  useEffect(() => {
+    fetch('/api/media/config')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.config) {
+          setMediaConfig(data.config);
+        }
+      })
+      .catch((err) => console.error('Error fetching media config:', err));
+  }, []);
 
   // Fetch Cities
   useEffect(() => {
@@ -430,11 +460,28 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    const currentImages = formData.images || [];
+    const fileList = Array.from(files);
+
+    if (currentImages.length + fileList.length > mediaConfig.maxPropertyImages) {
+      alert(`You can upload a maximum of ${mediaConfig.maxPropertyImages} photos. You already have ${currentImages.length}.`);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     try {
       setUploadingImage(true);
-      const fileList = Array.from(files);
+      const newImages = [...currentImages];
 
       for (const file of fileList) {
+        if (file.size > mediaConfig.maxImageSizeMb * 1024 * 1024) {
+          alert(`"${file.name}" exceeds the maximum image size limit of ${mediaConfig.maxImageSizeMb} MB.`);
+          continue;
+        }
+
+        const fileId = `${file.name}-${Date.now()}`;
+        setImageUploadProgress((prev) => ({ ...prev, [fileId]: 0 }));
+
         // 1. Get presigned upload URL from S3 API
         const presignRes = await fetch('/api/media/upload-url', {
           method: 'POST',
@@ -443,50 +490,74 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
             fileName: file.name,
             fileType: file.type || 'image/jpeg',
             mediaType: 'image',
+            fileSize: file.size,
           }),
         });
 
         if (!presignRes.ok) {
-          // If S3 is not configured locally, fallback to local object URL or error message
-          const errData = await presignRes.json();
-          throw new Error(errData.error || 'Failed to initialize S3 upload');
+          const errData = await presignRes.json().catch(() => ({}));
+          throw new Error(errData.error || `Failed to initialize S3 upload for ${file.name}`);
         }
 
         const { uploadUrl, publicUrl, rawKey, processedKeys, processedUrls } = await presignRes.json();
 
-        // 2. Direct PUT to S3
-        const uploadRes = await fetch(uploadUrl, {
-          method: 'PUT',
-          headers: { 'Content-Type': file.type || 'image/jpeg' },
-          body: file,
+        // 2. Direct PUT to S3 with progress tracking
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', uploadUrl, true);
+          xhr.setRequestHeader('Content-Type', file.type || 'image/jpeg');
+
+          xhr.upload.onprogress = (event) => {
+            if (event.lengthComputable) {
+              const percent = Math.round((event.loaded / event.total) * 100);
+              setImageUploadProgress((prev) => ({ ...prev, [fileId]: percent }));
+            }
+          };
+
+          xhr.onload = () => {
+            if (xhr.status === 200 || xhr.status === 204) {
+              resolve();
+            } else {
+              reject(new Error(`S3 upload failed for ${file.name} with status ${xhr.status}`));
+            }
+          };
+
+          xhr.onerror = () => reject(new Error(`Network error during image S3 upload for ${file.name}`));
+          xhr.send(file);
         });
 
-        if (!uploadRes.ok) {
-          throw new Error(`S3 upload failed for ${file.name}`);
-        }
-
         // 3. Append to property images
-        const currentImages = formData.images || [];
         const previewUrl = URL.createObjectURL(file);
+        const hasCover = newImages.some((i: any) => i.isCover);
         const newImgObj = {
           url: processedUrls?.medium || publicUrl,
           previewUrl,
           rawKey,
           processedKeys,
           processedUrls,
-          isCover: currentImages.length === 0,
+          isCover: !hasCover,
           fileName: file.name,
           type: 'image',
           status: 'ready',
-          order: currentImages.length,
+          order: newImages.length,
         };
 
-        handleFormChange('images', [...currentImages, newImgObj]);
+        newImages.push(newImgObj);
+        handleFormChange('images', [...newImages]);
+
+        setTimeout(() => {
+          setImageUploadProgress((prev) => {
+            const next = { ...prev };
+            delete next[fileId];
+            return next;
+          });
+        }, 1000);
       }
     } catch (err: any) {
       alert(`Photo upload note: ${err.message}. You can also paste image URLs directly.`);
     } finally {
       setUploadingImage(false);
+      setImageUploadProgress({});
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -494,9 +565,14 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
   const handleAddImage = () => {
     if (!newImageUrl.trim()) return;
     const currentImages = formData.images || [];
+    if (currentImages.length >= mediaConfig.maxPropertyImages) {
+      alert(`Maximum photo limit (${mediaConfig.maxPropertyImages}) reached.`);
+      return;
+    }
+    const hasCover = currentImages.some((i: any) => i.isCover);
     const newImgObj = {
       url: newImageUrl.trim(),
-      isCover: currentImages.length === 0,
+      isCover: !hasCover,
       fileName: `image_${currentImages.length + 1}`,
       type: 'image',
       status: 'ready',
@@ -528,14 +604,22 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    const currentVideos = formData.videos || [];
+    const fileList = Array.from(files);
+
+    if (currentVideos.length + fileList.length > mediaConfig.maxPropertyVideos) {
+      alert(`You can upload a maximum of ${mediaConfig.maxPropertyVideos} video tours. You already have ${currentVideos.length}.`);
+      if (videoFileInputRef.current) videoFileInputRef.current.value = '';
+      return;
+    }
+
     try {
       setUploadingVideo(true);
-      const fileList = Array.from(files);
-      const newVideos = [...(formData.videos || [])];
+      const newVideos = [...currentVideos];
 
       for (const file of fileList) {
-        if (file.size > 100 * 1024 * 1024) {
-          alert(`File "${file.name}" exceeds maximum allowed size (100MB).`);
+        if (file.size > mediaConfig.maxVideoSizeMb * 1024 * 1024) {
+          alert(`File "${file.name}" exceeds maximum allowed size (${mediaConfig.maxVideoSizeMb} MB).`);
           continue;
         }
 
@@ -550,6 +634,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
             fileName: file.name,
             fileType: file.type || 'video/mp4',
             mediaType: 'video',
+            fileSize: file.size,
           }),
         });
 
@@ -602,6 +687,14 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
 
         newVideos.push(newVidObj);
         handleFormChange('videos', [...newVideos]);
+
+        setTimeout(() => {
+          setVideoUploadProgress((prev) => {
+            const next = { ...prev };
+            delete next[fileId];
+            return next;
+          });
+        }, 1000);
       }
     } catch (err: any) {
       alert(`Video upload note: ${err.message}. You can also paste video URLs directly.`);
@@ -1780,70 +1873,94 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
                   <ImageIcon className="h-4 w-4" />
-                  <span>1. Property Photos ({formData.images?.length || 0})</span>
+                  <span>1. Property Photos ({formData.images?.length || 0}/{mediaConfig.maxPropertyImages})</span>
                 </h3>
                 <span className="text-[11px] text-slate-400">
-                  First image or selected cover is shown as primary listing banner
+                  Max {mediaConfig.maxImageSizeMb}MB each. First image or selected cover is shown as primary listing banner
                 </span>
               </div>
 
               {/* Upload or Add Image URL Box */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
-                {/* Direct S3 Upload Button */}
-                <div>
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileUpload}
-                    multiple
-                    accept="image/*"
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingImage}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-indigo-500/40 bg-indigo-950/30 py-3.5 px-4 text-xs font-bold text-indigo-300 hover:border-indigo-400 hover:bg-indigo-900/40 transition active-press disabled:opacity-60"
-                  >
-                    {uploadingImage ? (
-                      <>
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-                        <span>Uploading Photos to S3 Bucket...</span>
-                      </>
-                    ) : (
-                      <>
-                        <ImageIcon className="h-4 w-4 text-indigo-400" />
-                        <span>📷 Upload Photos from Camera / Gallery (Direct S3)</span>
-                      </>
-                    )}
-                  </button>
-                </div>
+              {(formData.images?.length || 0) < mediaConfig.maxPropertyImages ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
+                  {/* Direct S3 Upload Button */}
+                  <div>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      multiple
+                      accept="image/*"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadingImage}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-indigo-500/40 bg-indigo-950/30 py-3.5 px-4 text-xs font-bold text-indigo-300 hover:border-indigo-400 hover:bg-indigo-900/40 transition active-press disabled:opacity-60"
+                    >
+                      {uploadingImage ? (
+                        <>
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                          <span>Uploading Photos to S3 Bucket...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="h-4 w-4 text-indigo-400" />
+                          <span>📷 Upload Photos from Camera / Gallery (Direct S3)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="h-px flex-1 bg-slate-800" />
-                  <span className="text-[10px] uppercase font-bold text-slate-500">or enter image URL</span>
-                  <div className="h-px flex-1 bg-slate-800" />
-                </div>
+                  {/* Progress bars if uploading images */}
+                  {Object.keys(imageUploadProgress).length > 0 && (
+                    <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Uploading Photos...</p>
+                      {Object.entries(imageUploadProgress).map(([name, progress]) => (
+                        <div key={name} className="space-y-1">
+                          <div className="flex justify-between text-[10px] font-medium text-slate-300">
+                            <span className="truncate max-w-[200px]">{name.split('-').slice(0, -1).join('-')}</span>
+                            <span>{progress}%</span>
+                          </div>
+                          <div className="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                            <div className="bg-indigo-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${progress}%` }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
-                {/* Paste URL */}
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={newImageUrl}
-                    onChange={(e) => setNewImageUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/... or image URL"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddImage}
-                    className="flex shrink-0 items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-3 text-xs font-bold text-white hover:bg-indigo-500 transition"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>Add Photo</span>
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <div className="h-px flex-1 bg-slate-800" />
+                    <span className="text-[10px] uppercase font-bold text-slate-500">or enter image URL</span>
+                    <div className="h-px flex-1 bg-slate-800" />
+                  </div>
+
+                  {/* Paste URL */}
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={newImageUrl}
+                      onChange={(e) => setNewImageUrl(e.target.value)}
+                      placeholder="https://images.unsplash.com/... or image URL"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddImage}
+                      className="flex shrink-0 items-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-3 text-xs font-bold text-white hover:bg-indigo-500 transition"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>Add Photo</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/20 p-4 text-center text-xs text-indigo-300 font-medium">
+                  Maximum photo limit ({mediaConfig.maxPropertyImages}) reached. Remove existing photos to upload or add new ones.
+                </div>
+              )}
 
               {/* Image Gallery List */}
               {formData.images?.length === 0 ? (
@@ -1918,90 +2035,96 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-indigo-300 flex items-center gap-1.5">
                   <VideoIcon className="h-4 w-4 text-indigo-400" />
-                  <span>2. Walkthrough Videos ({formData.videos?.length || 0})</span>
+                  <span>2. Walkthrough Videos ({formData.videos?.length || 0}/{mediaConfig.maxPropertyVideos})</span>
                 </h3>
                 <span className="text-[11px] text-slate-400">
-                  Supported formats: MP4, WebM, MOV (Max 10 minutes duration)
+                  Supported formats: MP4, WebM, MOV (Max {mediaConfig.maxVideoDurationMinutes} mins, {mediaConfig.maxVideoSizeMb} MB)
                 </span>
               </div>
 
               {/* Upload or Add Video Box */}
-              <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
-                {/* Direct Video S3 Upload */}
-                <div>
-                  <input
-                    type="file"
-                    ref={videoFileInputRef}
-                    onChange={handleVideoUpload}
-                    multiple
-                    accept="video/mp4,video/webm,video/quicktime,video/*"
-                    className="hidden"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => videoFileInputRef.current?.click()}
-                    disabled={uploadingVideo}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-purple-500/40 bg-purple-950/20 py-3.5 px-4 text-xs font-bold text-purple-300 hover:border-purple-400 hover:bg-purple-900/30 transition active-press disabled:opacity-60"
-                  >
-                    {uploadingVideo ? (
-                      <>
-                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
-                        <span>Uploading Video to S3 Bucket...</span>
-                      </>
-                    ) : (
-                      <>
-                        <VideoIcon className="h-4 w-4 text-purple-400" />
-                        <span>🎥 Upload Property Video Tour (Direct S3)</span>
-                      </>
+              {(formData.videos?.length || 0) < mediaConfig.maxPropertyVideos ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-4 space-y-3">
+                  {/* Direct Video S3 Upload */}
+                  <div>
+                    <input
+                      type="file"
+                      ref={videoFileInputRef}
+                      onChange={handleVideoUpload}
+                      multiple
+                      accept="video/mp4,video/webm,video/quicktime,video/*"
+                      className="hidden"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => videoFileInputRef.current?.click()}
+                      disabled={uploadingVideo}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-purple-500/40 bg-purple-950/20 py-3.5 px-4 text-xs font-bold text-purple-300 hover:border-purple-400 hover:bg-purple-900/30 transition active-press disabled:opacity-60"
+                    >
+                      {uploadingVideo ? (
+                        <>
+                          <div className="h-4 w-4 animate-spin rounded-full border-2 border-purple-400 border-t-transparent" />
+                          <span>Uploading Video to S3 Bucket...</span>
+                        </>
+                      ) : (
+                        <>
+                          <VideoIcon className="h-4 w-4 text-purple-400" />
+                          <span>🎥 Upload Property Video Tour (Direct S3)</span>
+                        </>
+                      )}
+                    </button>
+
+                    {/* Progress bars if uploading */}
+                    {Object.keys(videoUploadProgress).length > 0 && (
+                      <div className="mt-2 space-y-1.5">
+                        {Object.entries(videoUploadProgress).map(([name, progress]) => (
+                          <div key={name} className="space-y-1 text-xs">
+                            <div className="flex justify-between text-[11px] text-purple-300">
+                              <span className="truncate max-w-[200px]">{name}</span>
+                              <span>{progress}%</span>
+                            </div>
+                            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                              <div
+                                className="h-full bg-purple-500 transition-all duration-200"
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
-                  </button>
+                  </div>
 
-                  {/* Progress bars if uploading */}
-                  {Object.keys(videoUploadProgress).length > 0 && (
-                    <div className="mt-2 space-y-1.5">
-                      {Object.entries(videoUploadProgress).map(([name, progress]) => (
-                        <div key={name} className="space-y-1 text-xs">
-                          <div className="flex justify-between text-[11px] text-purple-300">
-                            <span className="truncate max-w-[200px]">{name}</span>
-                            <span>{progress}%</span>
-                          </div>
-                          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-                            <div
-                              className="h-full bg-purple-500 transition-all duration-200"
-                              style={{ width: `${progress}%` }}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                  <div className="flex items-center gap-2">
+                    <div className="h-px flex-1 bg-slate-800" />
+                    <span className="text-[10px] uppercase font-bold text-slate-500">or enter direct video URL</span>
+                    <div className="h-px flex-1 bg-slate-800" />
+                  </div>
 
-                <div className="flex items-center gap-2">
-                  <div className="h-px flex-1 bg-slate-800" />
-                  <span className="text-[10px] uppercase font-bold text-slate-500">or enter direct video URL</span>
-                  <div className="h-px flex-1 bg-slate-800" />
+                  {/* Paste Video URL */}
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={newVideoUrl}
+                      onChange={(e) => setNewVideoUrl(e.target.value)}
+                      placeholder="https://.../tour.mp4 (Direct Video Link)"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddVideoUrl}
+                      className="flex shrink-0 items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-3 text-xs font-bold text-white hover:bg-purple-500 transition"
+                    >
+                      <Plus className="h-4 w-4" />
+                      <span>Add Video</span>
+                    </button>
+                  </div>
                 </div>
-
-                {/* Paste Video URL */}
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={newVideoUrl}
-                    onChange={(e) => setNewVideoUrl(e.target.value)}
-                    placeholder="https://.../tour.mp4 (Direct Video Link)"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950 p-3 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddVideoUrl}
-                    className="flex shrink-0 items-center gap-1.5 rounded-xl bg-purple-600 px-4 py-3 text-xs font-bold text-white hover:bg-purple-500 transition"
-                  >
-                    <Plus className="h-4 w-4" />
-                    <span>Add Video</span>
-                  </button>
+              ) : (
+                <div className="rounded-xl border border-purple-500/30 bg-purple-950/20 p-4 text-center text-xs text-purple-300 font-medium">
+                  Maximum video limit ({mediaConfig.maxPropertyVideos}) reached. Remove existing videos to upload or add new ones.
                 </div>
-              </div>
+              )}
 
               {/* Uploaded Video List */}
               {formData.videos?.length === 0 ? (

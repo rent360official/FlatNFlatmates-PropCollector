@@ -4,6 +4,7 @@ import Property from '@/models/Property';
 import User from '@/models/User';
 import City from '@/models/City';
 import Locality from '@/models/Locality';
+import { getMediaUploadConfig } from '@/lib/mediaConfig';
 
 export const dynamic = 'force-dynamic';
 
@@ -214,6 +215,14 @@ export async function POST(request: NextRequest) {
           error: `Please fill all required fields: ${missingFields.join(', ')}`,
           missingFields,
         },
+        { status: 400 }
+      );
+    }
+
+    const mediaConfig = await getMediaUploadConfig();
+    if (images && images.length > mediaConfig.maxPropertyImages) {
+      return NextResponse.json(
+        { error: `You can upload a maximum of ${mediaConfig.maxPropertyImages} photos. You provided ${images.length}.` },
         { status: 400 }
       );
     }

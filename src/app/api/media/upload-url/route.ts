@@ -3,6 +3,7 @@ import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { getS3Client, getS3Config, generateMediaPaths } from '@/lib/s3';
 import { getServerSession } from '@/lib/auth';
+import { getMediaUploadConfig } from '@/lib/mediaConfig';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,13 +14,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { fileName, fileType, mediaType = 'image', propertyId = 'collector' } = await req.json();
+    const { fileName, fileType, mediaType = 'image', propertyId = 'collector', fileSize } = await req.json();
 
     if (!fileName || !fileType) {
       return NextResponse.json({ error: 'fileName and fileType are required' }, { status: 400 });
     }
 
     const type: 'image' | 'video' = mediaType === 'video' ? 'video' : 'image';
+
+    // Validate size against dynamic admin configured limits
+    const limits = await getMediaUploadConfig();
+    if (fileSize && typeof fileSize === 'number') {
+      if (type === 'video') {
+        const maxBytes = limits.maxVideoSizeMb * 1024 * 1024;
+        if (fileSize > maxBytes) {
+          return NextResponse.json(
+            { error: `Video size exceeds the maximum allowed limit of ${limits.maxVideoSizeMb} MB.` },
+            { status: 400 }
+          );
+        }
+      } else {
+        const maxBytes = limits.maxImageSizeMb * 1024 * 1024;
+        if (fileSize > maxBytes) {
+          return NextResponse.json(
+            { error: `Image size exceeds the maximum allowed limit of ${limits.maxImageSizeMb} MB.` },
+            { status: 400 }
+          );
+        }
+      }
+    }
     const s3Client = getS3Client();
     const config = getS3Config();
 
