@@ -88,6 +88,7 @@ export async function PUT(
       floor,
       totalFloors,
       areaSqft,
+      notAvailableFields,
     } = body;
 
     // Handle new owner creation if owner was updated
@@ -150,7 +151,11 @@ export async function PUT(
       ...(localityId && { localityId }),
       ...(addressLine && { addressLine: addressLine.trim() }),
       ...(furnishingStatus && { furnishingStatus }),
-      ...(tenantPreference && { tenantPreference }),
+      ...(tenantPreference && {
+        tenantPreference: Array.isArray(tenantPreference)
+          ? (tenantPreference.length > 0 ? tenantPreference : ['any'])
+          : (tenantPreference ? [tenantPreference] : ['any']),
+      }),
       ...(brokerageFlag !== undefined && { brokerageFlag: Boolean(brokerageFlag) }),
       ...(brokerageAmount !== undefined && { brokerageAmount: Number(brokerageAmount) }),
       ...(amenities !== undefined && { amenities }),
@@ -176,6 +181,9 @@ export async function PUT(
       floor: floor !== undefined && floor !== '' ? Number(floor) : undefined,
       totalFloors: totalFloors !== undefined && totalFloors !== '' ? Number(totalFloors) : undefined,
       areaSqft: areaSqft !== undefined && areaSqft !== '' ? Number(areaSqft) : undefined,
+      ...(notAvailableFields !== undefined && {
+        notAvailableFields: Array.isArray(notAvailableFields) ? notAvailableFields : [],
+      }),
     };
 
     if (location?.coordinates && Array.isArray(location.coordinates) && location.coordinates.length === 2) {

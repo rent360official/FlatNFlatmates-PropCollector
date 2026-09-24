@@ -146,7 +146,9 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
     propertyType: initialData?.propertyType || 'apartment',
     bhkConfig: initialData?.bhkConfig || '2BHK',
     furnishingStatus: initialData?.furnishingStatus || 'semi_furnished',
-    tenantPreference: initialData?.tenantPreference || 'any',
+    tenantPreference: Array.isArray(initialData?.tenantPreference)
+      ? (initialData.tenantPreference.length > 0 ? initialData.tenantPreference : ['any'])
+      : (initialData?.tenantPreference ? [initialData.tenantPreference] : ['any']),
     managementType: initialData?.managementType || 'self_managed',
     floor: initialData?.floor ?? '',
     totalFloors: initialData?.totalFloors ?? '',
@@ -193,6 +195,9 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
 
     // Status (default: paused)
     status: initialData?.status || 'paused',
+
+    // Unavailable / Hidden Info Flags
+    notAvailableFields: initialData?.notAvailableFields || [],
   });
 
   // Custom new amenity/rule inputs
@@ -417,17 +422,136 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
     } in ${selectedLocality || 'Prime Area'}, ${selectedCity || 'City'}`;
 
     const amenitiesList = formData.amenities?.length > 0 ? formData.amenities.join(', ') : 'Standard modern amenities';
+    const tenantPrefText = Array.isArray(formData.tenantPreference)
+      ? formData.tenantPreference.join(', ').toUpperCase()
+      : String(formData.tenantPreference || 'ANY').toUpperCase();
     const genDesc = `Spacious and well-ventilated ${formData.bhkConfig} ${furnishText} ${
       formData.propertyType
     } available for rent in ${formData.addressLine || selectedLocality || 'prime locality'}.\n\nFeatures & Amenities: ${amenitiesList}.\nSuitable for: ${
-      formData.tenantPreference.toUpperCase()
+      tenantPrefText
     }.\nPower Backup: ${formData.powerBackup.toUpperCase()}, Water Supply: ${formData.waterSupplyType.toUpperCase()}.\nVerified property collected by FlatNFlatmates field team.`;
 
     handleFormChange('title', genTitle);
     handleFormChange('description', genDesc);
   };
 
+  // Not Available Toggle Helpers
+  const isFieldNA = (key: string) => {
+    return Array.isArray(formData.notAvailableFields) && formData.notAvailableFields.includes(key);
+  };
+
+  const isFieldFilled = (key: string): boolean => {
+    if (key === 'owner' || key === 'ownerId') {
+      return ownerMode === 'select' ? Boolean(selectedOwner) : Boolean(newOwner.phone?.trim());
+    }
+    if (key === 'tenantPreference') {
+      return Array.isArray(formData.tenantPreference)
+        ? formData.tenantPreference.length > 0
+        : Boolean(formData.tenantPreference);
+    }
+    if (key === 'images') {
+      return Array.isArray(formData.images) && formData.images.length > 0;
+    }
+    if (key === 'coordinates' || key === 'location') {
+      return (
+        formData.lat !== '' &&
+        formData.lat !== null &&
+        formData.lat !== undefined &&
+        formData.lng !== '' &&
+        formData.lng !== null &&
+        formData.lng !== undefined
+      );
+    }
+    const val = formData[key];
+    if (val === undefined || val === null || val === '') return false;
+    if (typeof val === 'string') return val.trim().length > 0;
+    if (typeof val === 'number') return !isNaN(val);
+    if (Array.isArray(val)) return val.length > 0;
+    return Boolean(val);
+  };
+
+  const toggleFieldNA = (key: string) => {
+    const current: string[] = Array.isArray(formData.notAvailableFields) ? formData.notAvailableFields : [];
+    const updated = current.includes(key)
+      ? current.filter((k) => k !== key)
+      : [...current, key];
+    handleFormChange('notAvailableFields', updated);
+  };
+
+  const FieldLabelWithNA = ({
+    label,
+    fieldKey,
+    required = false,
+    optional = false,
+    isFilled,
+    className = "",
+  }: {
+    label: string;
+    fieldKey: string;
+    required?: boolean;
+    optional?: boolean;
+    isFilled?: boolean;
+    className?: string;
+  }) => {
+    const isNA = isFieldNA(fieldKey);
+    const filled = isFilled !== undefined ? isFilled : isFieldFilled(fieldKey);
+
+    return (
+      <div className={`mb-1.5 flex items-center justify-between gap-2 ${className}`}>
+        <label className="text-xs font-bold text-slate-200">
+          {label}{' '}
+          {!isNA && required && (
+            <span className={filled ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+              * (Required)
+            </span>
+          )}
+          {!isNA && optional && <span className="text-slate-500 font-normal">(Optional)</span>}
+        </label>
+        <button
+          type="button"
+          onClick={() => toggleFieldNA(fieldKey)}
+          className={`flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[11px] font-semibold transition-all cursor-pointer border ${
+            isNA
+              ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-xs'
+              : 'bg-slate-900/80 text-slate-400 border-slate-700 hover:text-slate-200 hover:border-slate-600'
+          }`}
+          title={isNA ? 'Click to unmark Not Available' : 'Mark as Information Not Available'}
+        >
+          <span
+            className={`flex h-3.5 w-3.5 items-center justify-center rounded border text-[9px] font-bold ${
+              isNA ? 'border-amber-400 bg-amber-500 text-slate-950' : 'border-slate-600 bg-slate-950 text-transparent'
+            }`}
+          >
+            ✓
+          </span>
+          <span>{isNA ? 'Not Available' : 'Mark N/A'}</span>
+        </button>
+      </div>
+    );
+  };
+
   // Chip Toggle Helpers
+  const toggleTenantPreference = (item: string) => {
+    const current: string[] = Array.isArray(formData.tenantPreference)
+      ? formData.tenantPreference
+      : (formData.tenantPreference ? [formData.tenantPreference] : ['any']);
+    if (item === 'any') {
+      handleFormChange('tenantPreference', ['any']);
+      return;
+    }
+    const filtered = current.filter((x) => x !== 'any');
+    let updated: string[];
+    if (filtered.includes(item)) {
+      updated = filtered.filter((x) => x !== item);
+      if (updated.length === 0) {
+        updated = ['any'];
+      }
+    } else {
+      updated = [...filtered, item];
+    }
+    handleFormChange('tenantPreference', updated);
+  };
+
   const toggleAmenity = (item: string) => {
     const current = formData.amenities || [];
     const updated = current.includes(item)
@@ -736,11 +860,13 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
     }
 
     // Specs validation
-    if (!formData.title?.trim()) errors.push({ tab: 'specs', field: 'Property Title' });
-    if (!formData.bhkConfig) errors.push({ tab: 'specs', field: 'BHK Configuration' });
-    if (!formData.propertyType) errors.push({ tab: 'specs', field: 'Property Type' });
-    if (!formData.furnishingStatus) errors.push({ tab: 'specs', field: 'Furnishing Status' });
-    if (!formData.tenantPreference) errors.push({ tab: 'specs', field: 'Tenant Preference' });
+    if (!isFieldNA('title') && !formData.title?.trim()) errors.push({ tab: 'specs', field: 'Property Title' });
+    if (!isFieldNA('bhkConfig') && !formData.bhkConfig) errors.push({ tab: 'specs', field: 'BHK Configuration' });
+    if (!isFieldNA('propertyType') && !formData.propertyType) errors.push({ tab: 'specs', field: 'Property Type' });
+    if (!isFieldNA('furnishingStatus') && !formData.furnishingStatus) errors.push({ tab: 'specs', field: 'Furnishing Status' });
+    if (!isFieldNA('tenantPreference') && (!formData.tenantPreference || (Array.isArray(formData.tenantPreference) && formData.tenantPreference.length === 0))) {
+      errors.push({ tab: 'specs', field: 'Tenant Preference' });
+    }
 
     // Location validation
     if (!formData.cityId) errors.push({ tab: 'location', field: 'City' });
@@ -751,15 +877,15 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
     }
 
     // Pricing validation
-    if (formData.rentAmount === '' || Number(formData.rentAmount) < 0) {
+    if (!isFieldNA('rentAmount') && (formData.rentAmount === '' || Number(formData.rentAmount) < 0)) {
       errors.push({ tab: 'pricing', field: 'Monthly Rent Amount' });
     }
-    if (formData.depositAmount === '' || Number(formData.depositAmount) < 0) {
+    if (!isFieldNA('depositAmount') && (formData.depositAmount === '' || Number(formData.depositAmount) < 0)) {
       errors.push({ tab: 'pricing', field: 'Security Deposit Amount' });
     }
 
     // Description validation
-    if (!formData.description?.trim()) {
+    if (!isFieldNA('description') && !formData.description?.trim()) {
       errors.push({ tab: 'review', field: 'Property Description' });
     }
 
@@ -790,16 +916,18 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
       setLoading(true);
 
       const payload: any = {
-        title: formData.title.trim(),
-        description: formData.description.trim(),
-        propertyType: formData.propertyType,
-        bhkConfig: formData.bhkConfig,
-        furnishingStatus: formData.furnishingStatus,
-        tenantPreference: formData.tenantPreference,
-        managementType: formData.managementType,
-        floor: formData.floor !== '' ? Number(formData.floor) : undefined,
-        totalFloors: formData.totalFloors !== '' ? Number(formData.totalFloors) : undefined,
-        areaSqft: formData.areaSqft !== '' ? Number(formData.areaSqft) : undefined,
+        title: formData.title?.trim() || (isFieldNA('title') ? 'Property for Rent' : 'Property Listing'),
+        description: formData.description?.trim() || (isFieldNA('description') ? 'Information not available' : 'Property Description'),
+        propertyType: formData.propertyType || 'apartment',
+        bhkConfig: formData.bhkConfig || '2BHK',
+        furnishingStatus: formData.furnishingStatus || 'unfurnished',
+        tenantPreference: Array.isArray(formData.tenantPreference)
+          ? (formData.tenantPreference.length > 0 ? formData.tenantPreference : ['any'])
+          : (formData.tenantPreference ? [formData.tenantPreference] : ['any']),
+        managementType: formData.managementType || 'self_managed',
+        floor: formData.floor !== '' && formData.floor !== undefined ? Number(formData.floor) : undefined,
+        totalFloors: formData.totalFloors !== '' && formData.totalFloors !== undefined ? Number(formData.totalFloors) : undefined,
+        areaSqft: formData.areaSqft !== '' && formData.areaSqft !== undefined ? Number(formData.areaSqft) : undefined,
         cityId: formData.cityId,
         localityId: formData.localityId,
         addressLine: formData.addressLine.trim(),
@@ -808,22 +936,22 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
           coordinates: [Number(formData.lng), Number(formData.lat)],
         },
         googleMapPlaceId: formData.googleMapPlaceId || undefined,
-        rentAmount: Number(formData.rentAmount),
-        depositAmount: Number(formData.depositAmount),
+        rentAmount: formData.rentAmount !== '' && formData.rentAmount !== undefined ? Number(formData.rentAmount) : 0,
+        depositAmount: formData.depositAmount !== '' && formData.depositAmount !== undefined ? Number(formData.depositAmount) : 0,
         maintenanceAmount: Number(formData.maintenanceAmount || 0),
         brokerageFlag: Boolean(formData.brokerageFlag),
         brokerageAmount: Number(formData.brokerageAmount || 0),
-        availableFrom: formData.availableFrom,
+        availableFrom: formData.availableFrom ? new Date(formData.availableFrom) : new Date(),
         minLeaseMonths: Number(formData.minLeaseMonths || 11),
         lockInMonths: Number(formData.lockInMonths || 0),
         amenities: formData.amenities || [],
         houseRules: formData.houseRules || [],
         safetyFeatures: formData.safetyFeatures || [],
-        powerBackup: formData.powerBackup,
-        waterSupplyType: formData.waterSupplyType,
-        parkingType: formData.parkingType,
+        powerBackup: formData.powerBackup || 'none',
+        waterSupplyType: formData.waterSupplyType || 'municipal',
+        parkingType: formData.parkingType || 'none',
         evChargingAvailable: Boolean(formData.evChargingAvailable),
-        petPolicy: formData.petPolicy,
+        petPolicy: formData.petPolicy || 'case_by_case',
         maxOccupants: Number(formData.maxOccupants || 2),
         internetReadiness: {
           fiberAvailable: Boolean(formData.fiberAvailable),
@@ -834,6 +962,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
         videos: formData.videos || [],
         tourVideoUrl: formData.tourVideoUrl || undefined,
         status: (typeof targetStatus === 'string' ? targetStatus : undefined) || formData.status || 'paused',
+        notAvailableFields: formData.notAvailableFields || [],
       };
 
       if (ownerMode === 'select') {
@@ -1280,127 +1409,176 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {/* Title (Required) */}
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Property Listing Title <span className={formData.title?.trim() ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
-                </label>
-                <input
-                  type="text"
-                  value={formData.title}
-                  onChange={(e) => handleFormChange('title', e.target.value)}
-                  placeholder="e.g. Spacious 2BHK Apartment with Balcony in HSR Layout"
-                  required
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                />
+                <FieldLabelWithNA label="Property Listing Title" fieldKey="title" required />
+                {isFieldNA('title') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={formData.title}
+                    onChange={(e) => handleFormChange('title', e.target.value)}
+                    placeholder="e.g. Spacious 2BHK Apartment with Balcony in HSR Layout"
+                    required
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                  />
+                )}
               </div>
 
               {/* BHK Configuration (Required) */}
               <div>
-                <label className="mb-1 block text-xs font-bold text-slate-200">
-                  BHK Configuration <span className={formData.bhkConfig ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
-                </label>
-                <select
-                  value={formData.bhkConfig}
-                  onChange={(e) => handleFormChange('bhkConfig', e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
-                >
-                  <option value="1RK">1 RK</option>
-                  <option value="1BHK">1 BHK</option>
-                  <option value="2BHK">2 BHK</option>
-                  <option value="3BHK">3 BHK</option>
-                  <option value="4BHK+">4 BHK+</option>
-                </select>
+                <FieldLabelWithNA label="BHK Configuration" fieldKey="bhkConfig" required />
+                {isFieldNA('bhkConfig') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <select
+                    value={formData.bhkConfig}
+                    onChange={(e) => handleFormChange('bhkConfig', e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
+                  >
+                    <option value="1RK">1 RK</option>
+                    <option value="1BHK">1 BHK</option>
+                    <option value="2BHK">2 BHK</option>
+                    <option value="3BHK">3 BHK</option>
+                    <option value="4BHK+">4 BHK+</option>
+                  </select>
+                )}
               </div>
 
               {/* Property Type (Required) */}
               <div>
-                <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Property Type <span className={formData.propertyType ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
-                </label>
-                <select
-                  value={formData.propertyType}
-                  onChange={(e) => handleFormChange('propertyType', e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
-                >
-                  <option value="apartment">Apartment</option>
-                  <option value="house">Independent House</option>
-                  <option value="villa">Villa</option>
-                  <option value="pg_hostel">PG / Hostel</option>
-                </select>
+                <FieldLabelWithNA label="Property Type" fieldKey="propertyType" required />
+                {isFieldNA('propertyType') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <select
+                    value={formData.propertyType}
+                    onChange={(e) => handleFormChange('propertyType', e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
+                  >
+                    <option value="apartment">Apartment</option>
+                    <option value="house">Independent House</option>
+                    <option value="villa">Villa</option>
+                    <option value="pg_hostel">PG / Hostel</option>
+                  </select>
+                )}
               </div>
 
               {/* Furnishing Status (Required) */}
               <div>
-                <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Furnishing Status <span className={formData.furnishingStatus ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
-                </label>
-                <select
-                  value={formData.furnishingStatus}
-                  onChange={(e) => handleFormChange('furnishingStatus', e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
-                >
-                  <option value="fully_furnished">Fully Furnished</option>
-                  <option value="semi_furnished">Semi Furnished</option>
-                  <option value="unfurnished">Unfurnished</option>
-                </select>
+                <FieldLabelWithNA label="Furnishing Status" fieldKey="furnishingStatus" required />
+                {isFieldNA('furnishingStatus') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <select
+                    value={formData.furnishingStatus}
+                    onChange={(e) => handleFormChange('furnishingStatus', e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
+                  >
+                    <option value="fully_furnished">Fully Furnished</option>
+                    <option value="semi_furnished">Semi Furnished</option>
+                    <option value="unfurnished">Unfurnished</option>
+                  </select>
+                )}
               </div>
 
               {/* Tenant Preference (Required) */}
-              <div>
-                <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Tenant Preference <span className={formData.tenantPreference ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
-                </label>
-                <select
-                  value={formData.tenantPreference}
-                  onChange={(e) => handleFormChange('tenantPreference', e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
-                >
-                  <option value="any">Any (Family / Bachelors / Anyone)</option>
-                  <option value="family">Family Only</option>
-                  <option value="bachelors">Bachelors (Any)</option>
-                  <option value="girls">Girls / Female Only</option>
-                  <option value="boys">Boys / Male Only</option>
-                </select>
+              <div className="md:col-span-2">
+                <FieldLabelWithNA label="Tenant Preference" fieldKey="tenantPreference" required />
+                {isFieldNA('tenantPreference') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {[
+                      { id: 'family', label: 'Family' },
+                      { id: 'bachelors', label: 'Bachelors' },
+                      { id: 'girls', label: 'Girls Only' },
+                      { id: 'boys', label: 'Boys Only' },
+                      { id: 'any', label: 'Any / No Preference' },
+                    ].map((opt) => {
+                      const selected = Array.isArray(formData.tenantPreference)
+                        ? formData.tenantPreference.includes(opt.id)
+                        : formData.tenantPreference === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => toggleTenantPreference(opt.id)}
+                          className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 cursor-pointer ${
+                            selected
+                              ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/20'
+                              : 'bg-slate-900/80 text-slate-300 border-slate-700 hover:bg-slate-800'
+                          }`}
+                        >
+                          {selected && <Check className="w-3.5 h-3.5 flex-shrink-0" />}
+                          <span>{opt.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Area Sqft (Optional) */}
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
-                  Super Built-up Area (Sq. Ft) <span className="text-slate-500">(Optional)</span>
-                </label>
-                <input
-                  type="number"
-                  value={formData.areaSqft}
-                  onChange={(e) => handleFormChange('areaSqft', e.target.value)}
-                  placeholder="e.g. 1150"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                />
+                <FieldLabelWithNA label="Super Built-up Area (Sq. Ft)" fieldKey="areaSqft" optional />
+                {isFieldNA('areaSqft') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    value={formData.areaSqft}
+                    onChange={(e) => handleFormChange('areaSqft', e.target.value)}
+                    placeholder="e.g. 1150"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                  />
+                )}
               </div>
 
               {/* Floor & Total Floors (Optional) */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-300">
-                    Floor <span className="text-slate-500">(Opt)</span>
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.floor}
-                    onChange={(e) => handleFormChange('floor', e.target.value)}
-                    placeholder="e.g. 3"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                  />
+                  <FieldLabelWithNA label="Floor" fieldKey="floor" optional />
+                  {isFieldNA('floor') ? (
+                    <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                      ℹ️ N/A
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      value={formData.floor}
+                      onChange={(e) => handleFormChange('floor', e.target.value)}
+                      placeholder="e.g. 3"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                    />
+                  )}
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-300">
-                    Total Floors <span className="text-slate-500">(Opt)</span>
-                  </label>
-                  <input
-                    type="number"
-                    value={formData.totalFloors}
-                    onChange={(e) => handleFormChange('totalFloors', e.target.value)}
-                    placeholder="e.g. 5"
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                  />
+                  <FieldLabelWithNA label="Total Floors" fieldKey="totalFloors" optional />
+                  {isFieldNA('totalFloors') ? (
+                    <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                      ℹ️ N/A
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      value={formData.totalFloors}
+                      onChange={(e) => handleFormChange('totalFloors', e.target.value)}
+                      placeholder="e.g. 5"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                    />
+                  )}
                 </div>
               </div>
 
@@ -1523,96 +1701,120 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {/* Rent Amount (Required) */}
               <div>
-                <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Monthly Rent (₹) <span className={formData.rentAmount !== '' && Number(formData.rentAmount) >= 0 ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
-                </label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-bold">
-                    ₹
-                  </span>
-                  <input
-                    type="number"
-                    value={formData.rentAmount}
-                    onChange={(e) => handleFormChange('rentAmount', e.target.value)}
-                    placeholder="e.g. 28000"
-                    required
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 py-3 pl-8 pr-4 text-sm font-bold text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                  />
-                </div>
+                <FieldLabelWithNA label="Monthly Rent (₹)" fieldKey="rentAmount" required />
+                {isFieldNA('rentAmount') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-bold">
+                      ₹
+                    </span>
+                    <input
+                      type="number"
+                      value={formData.rentAmount}
+                      onChange={(e) => handleFormChange('rentAmount', e.target.value)}
+                      placeholder="e.g. 28000"
+                      required
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950/80 py-3 pl-8 pr-4 text-sm font-bold text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Deposit Amount (Required) */}
               <div>
-                <label className="mb-1 block text-xs font-bold text-slate-200">
-                  Security Deposit (₹) <span className={formData.depositAmount !== '' && Number(formData.depositAmount) >= 0 ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
-                </label>
-                <div className="relative">
-                  <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-bold">
-                    ₹
-                  </span>
-                  <input
-                    type="number"
-                    value={formData.depositAmount}
-                    onChange={(e) => handleFormChange('depositAmount', e.target.value)}
-                    placeholder="e.g. 100000"
-                    required
-                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 py-3 pl-8 pr-4 text-sm font-bold text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                  />
-                </div>
+                <FieldLabelWithNA label="Security Deposit (₹)" fieldKey="depositAmount" required />
+                {isFieldNA('depositAmount') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 font-bold">
+                      ₹
+                    </span>
+                    <input
+                      type="number"
+                      value={formData.depositAmount}
+                      onChange={(e) => handleFormChange('depositAmount', e.target.value)}
+                      placeholder="e.g. 100000"
+                      required
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950/80 py-3 pl-8 pr-4 text-sm font-bold text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Maintenance Amount (Optional) */}
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
-                  Monthly Maintenance (₹) <span className="text-slate-500">(Optional)</span>
-                </label>
-                <input
-                  type="number"
-                  value={formData.maintenanceAmount}
-                  onChange={(e) => handleFormChange('maintenanceAmount', e.target.value)}
-                  placeholder="e.g. 2500"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-                />
+                <FieldLabelWithNA label="Monthly Maintenance (₹)" fieldKey="maintenanceAmount" optional />
+                {isFieldNA('maintenanceAmount') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    value={formData.maintenanceAmount}
+                    onChange={(e) => handleFormChange('maintenanceAmount', e.target.value)}
+                    placeholder="e.g. 2500"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                  />
+                )}
               </div>
 
               {/* Available From (Optional, defaults to today) */}
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
-                  Available From Date
-                </label>
-                <input
-                  type="date"
-                  value={formData.availableFrom}
-                  onChange={(e) => handleFormChange('availableFrom', e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
-                />
+                <FieldLabelWithNA label="Available From Date" fieldKey="availableFrom" optional />
+                {isFieldNA('availableFrom') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <input
+                    type="date"
+                    value={formData.availableFrom}
+                    onChange={(e) => handleFormChange('availableFrom', e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
+                  />
+                )}
               </div>
 
               {/* Min Lease Months & Lock-in Months (Optional) */}
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
-                  Minimum Lease Duration (Months)
-                </label>
-                <input
-                  type="number"
-                  value={formData.minLeaseMonths}
-                  onChange={(e) => handleFormChange('minLeaseMonths', e.target.value)}
-                  placeholder="11"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
-                />
+                <FieldLabelWithNA label="Minimum Lease Duration (Months)" fieldKey="minLeaseMonths" optional />
+                {isFieldNA('minLeaseMonths') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    value={formData.minLeaseMonths}
+                    onChange={(e) => handleFormChange('minLeaseMonths', e.target.value)}
+                    placeholder="11"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
+                  />
+                )}
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
-                  Lock-in Period (Months)
-                </label>
-                <input
-                  type="number"
-                  value={formData.lockInMonths}
-                  onChange={(e) => handleFormChange('lockInMonths', e.target.value)}
-                  placeholder="0"
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
-                />
+                <FieldLabelWithNA label="Lock-in Period (Months)" fieldKey="lockInMonths" optional />
+                {isFieldNA('lockInMonths') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    value={formData.lockInMonths}
+                    onChange={(e) => handleFormChange('lockInMonths', e.target.value)}
+                    placeholder="0"
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white outline-none focus:border-indigo-500"
+                  />
+                )}
               </div>
 
               {/* Brokerage Toggle */}
@@ -1669,80 +1871,119 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
             {/* Utility Dropdowns */}
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">Power Backup</label>
-                <select
-                  value={formData.powerBackup}
-                  onChange={(e) => handleFormChange('powerBackup', e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-2.5 text-xs text-white outline-none"
-                >
-                  <option value="none">None</option>
-                  <option value="partial">Partial (Fans/Lights)</option>
-                  <option value="full">Full 100% Backup</option>
-                </select>
+                <FieldLabelWithNA label="Power Backup" fieldKey="powerBackup" optional />
+                {isFieldNA('powerBackup') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <select
+                    value={formData.powerBackup}
+                    onChange={(e) => handleFormChange('powerBackup', e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-2.5 text-xs text-white outline-none"
+                  >
+                    <option value="none">None</option>
+                    <option value="partial">Partial (Fans/Lights)</option>
+                    <option value="full">Full 100% Backup</option>
+                  </select>
+                )}
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">Water Supply</label>
-                <select
-                  value={formData.waterSupplyType}
-                  onChange={(e) => handleFormChange('waterSupplyType', e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-2.5 text-xs text-white outline-none"
-                >
-                  <option value="municipal">Municipal / Cauvery</option>
-                  <option value="borewell">Borewell</option>
-                  <option value="tanker">Tanker</option>
-                  <option value="mixed">Mixed (Cauvery + Borewell)</option>
-                </select>
+                <FieldLabelWithNA label="Water Supply" fieldKey="waterSupplyType" optional />
+                {isFieldNA('waterSupplyType') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <select
+                    value={formData.waterSupplyType}
+                    onChange={(e) => handleFormChange('waterSupplyType', e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-2.5 text-xs text-white outline-none"
+                  >
+                    <option value="municipal">Municipal / Cauvery</option>
+                    <option value="borewell">Borewell</option>
+                    <option value="tanker">Tanker</option>
+                    <option value="mixed">Mixed (Cauvery + Borewell)</option>
+                  </select>
+                )}
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">Parking Type</label>
-                <select
-                  value={formData.parkingType}
-                  onChange={(e) => handleFormChange('parkingType', e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-2.5 text-xs text-white outline-none"
-                >
-                  <option value="none">No Parking</option>
-                  <option value="two_wheeler">2 Wheeler Only</option>
-                  <option value="four_wheeler">4 Wheeler (Car) Only</option>
-                  <option value="both">Both (Car + 2 Wheeler)</option>
-                </select>
+                <FieldLabelWithNA label="Parking Type" fieldKey="parkingType" optional />
+                {isFieldNA('parkingType') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <select
+                    value={formData.parkingType}
+                    onChange={(e) => handleFormChange('parkingType', e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-2.5 text-xs text-white outline-none"
+                  >
+                    <option value="none">No Parking</option>
+                    <option value="two_wheeler">2 Wheeler Only</option>
+                    <option value="four_wheeler">4 Wheeler (Car) Only</option>
+                    <option value="both">Both (Car + 2 Wheeler)</option>
+                  </select>
+                )}
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">Pet Policy</label>
-                <select
-                  value={formData.petPolicy}
-                  onChange={(e) => handleFormChange('petPolicy', e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-2.5 text-xs text-white outline-none"
-                >
-                  <option value="allowed">Allowed</option>
-                  <option value="not_allowed">Not Allowed</option>
-                  <option value="case_by_case">Case by Case</option>
-                </select>
+                <FieldLabelWithNA label="Pet Policy" fieldKey="petPolicy" optional />
+                {isFieldNA('petPolicy') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <select
+                    value={formData.petPolicy}
+                    onChange={(e) => handleFormChange('petPolicy', e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-2.5 text-xs text-white outline-none"
+                  >
+                    <option value="allowed">Allowed</option>
+                    <option value="not_allowed">Not Allowed</option>
+                    <option value="case_by_case">Case by Case</option>
+                  </select>
+                )}
               </div>
 
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">Max Occupants</label>
-                <input
-                  type="number"
-                  value={formData.maxOccupants}
-                  onChange={(e) => handleFormChange('maxOccupants', e.target.value)}
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-2.5 text-xs text-white outline-none"
-                />
+                <FieldLabelWithNA label="Max Occupants" fieldKey="maxOccupants" optional />
+                {isFieldNA('maxOccupants') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <input
+                    type="number"
+                    value={formData.maxOccupants}
+                    onChange={(e) => handleFormChange('maxOccupants', e.target.value)}
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-2.5 text-xs text-white outline-none"
+                  />
+                )}
               </div>
 
-              <div className="flex items-center gap-3 pt-4">
-                <input
-                  type="checkbox"
-                  id="evCharge"
-                  checked={formData.evChargingAvailable}
-                  onChange={(e) => handleFormChange('evChargingAvailable', e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-700 text-indigo-600"
-                />
-                <label htmlFor="evCharge" className="text-xs text-slate-300 font-medium cursor-pointer">
-                  EV Charging Available
-                </label>
+              <div className="pt-2">
+                <FieldLabelWithNA label="EV Charging" fieldKey="evChargingAvailable" optional />
+                {isFieldNA('evChargingAvailable') ? (
+                  <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-2.5 text-xs text-amber-300">
+                    ℹ️ Marked as <strong>Information not available</strong>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3 pt-2">
+                    <input
+                      type="checkbox"
+                      id="evCharge"
+                      checked={formData.evChargingAvailable}
+                      onChange={(e) => handleFormChange('evChargingAvailable', e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-700 text-indigo-600"
+                    />
+                    <label htmlFor="evCharge" className="text-xs text-slate-300 font-medium cursor-pointer">
+                      EV Charging Available
+                    </label>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2217,26 +2458,32 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
             {/* Description (Required) */}
             <div>
               <div className="mb-1.5 flex items-center justify-between">
-                <label className="block text-xs font-bold text-slate-200">
-                  Full Property Description <span className={formData.description?.trim() ? "text-emerald-400" : "text-rose-400"}>* (Required)</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={handleAutoGenerateContent}
-                  className="flex items-center gap-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300"
-                >
-                  <Wand2 className="h-3.5 w-3.5" />
-                  <span>Auto-Write from specs</span>
-                </button>
+                <FieldLabelWithNA label="Full Property Description" fieldKey="description" required />
+                {!isFieldNA('description') && (
+                  <button
+                    type="button"
+                    onClick={handleAutoGenerateContent}
+                    className="flex items-center gap-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300 cursor-pointer"
+                  >
+                    <Wand2 className="h-3.5 w-3.5" />
+                    <span>Auto-Write from specs</span>
+                  </button>
+                )}
               </div>
-              <textarea
-                rows={5}
-                value={formData.description}
-                onChange={(e) => handleFormChange('description', e.target.value)}
-                placeholder="Detailed property description, society amenities, nearby transport, etc..."
-                required
-                className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
-              />
+              {isFieldNA('description') ? (
+                <div className="rounded-xl border border-dashed border-amber-500/40 bg-amber-500/10 p-4 text-xs text-amber-300">
+                  ℹ️ Marked as <strong>Information not available</strong> (Will be displayed as &ldquo;Information not available&rdquo; on the frontend)
+                </div>
+              ) : (
+                <textarea
+                  rows={5}
+                  value={formData.description}
+                  onChange={(e) => handleFormChange('description', e.target.value)}
+                  placeholder="Detailed property description, society amenities, nearby transport, etc..."
+                  required
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950/80 p-3 text-sm text-white placeholder-slate-500 outline-none focus:border-indigo-500"
+                />
+              )}
             </div>
 
             {/* Validation Checklist Box */}

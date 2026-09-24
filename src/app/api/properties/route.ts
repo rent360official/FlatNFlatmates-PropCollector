@@ -143,7 +143,11 @@ export async function POST(request: NextRequest) {
       floor,
       totalFloors,
       areaSqft,
+      notAvailableFields = [],
     } = body;
+
+    const naList = Array.isArray(notAvailableFields) ? notAvailableFields : [];
+    const isNA = (k: string) => naList.includes(k);
 
     // 1. Handle Owner creation if newOwner object provided
     if (!ownerId && newOwner) {
@@ -185,17 +189,17 @@ export async function POST(request: NextRequest) {
     // 2. Validate mandatory schema fields
     const missingFields: string[] = [];
     if (!ownerId) missingFields.push('Owner (Select or Add New)');
-    if (!title || !title.trim()) missingFields.push('Title');
-    if (!description || !description.trim()) missingFields.push('Description');
-    if (rentAmount === undefined || rentAmount === null || rentAmount === '') missingFields.push('Rent Amount');
-    if (depositAmount === undefined || depositAmount === null || depositAmount === '') missingFields.push('Deposit Amount');
-    if (!bhkConfig) missingFields.push('BHK Configuration');
-    if (!propertyType) missingFields.push('Property Type');
+    if (!isNA('title') && (!title || !title.trim())) missingFields.push('Title');
+    if (!isNA('description') && (!description || !description.trim())) missingFields.push('Description');
+    if (!isNA('rentAmount') && (rentAmount === undefined || rentAmount === null || rentAmount === '')) missingFields.push('Rent Amount');
+    if (!isNA('depositAmount') && (depositAmount === undefined || depositAmount === null || depositAmount === '')) missingFields.push('Deposit Amount');
+    if (!isNA('bhkConfig') && !bhkConfig) missingFields.push('BHK Configuration');
+    if (!isNA('propertyType') && !propertyType) missingFields.push('Property Type');
     if (!cityId) missingFields.push('City');
     if (!localityId) missingFields.push('Locality');
     if (!addressLine || !addressLine.trim()) missingFields.push('Address Line');
-    if (!furnishingStatus) missingFields.push('Furnishing Status');
-    if (!tenantPreference) missingFields.push('Tenant Preference');
+    if (!isNA('furnishingStatus') && !furnishingStatus) missingFields.push('Furnishing Status');
+    if (!isNA('tenantPreference') && (!tenantPreference || (Array.isArray(tenantPreference) && tenantPreference.length === 0))) missingFields.push('Tenant Preference');
 
     // Location coordinates validation
     const coordinates = location?.coordinates;
@@ -243,13 +247,13 @@ export async function POST(request: NextRequest) {
     // 4. Create property with default status: 'paused'
     const property = await Property.create({
       ownerId,
-      title: title.trim(),
-      description: description.trim(),
-      rentAmount: Number(rentAmount),
-      depositAmount: Number(depositAmount),
+      title: title?.trim() || (isNA('title') ? 'Property for Rent' : 'Property Listing'),
+      description: description?.trim() || (isNA('description') ? 'Information not available' : 'Property Description'),
+      rentAmount: rentAmount !== undefined && rentAmount !== '' ? Number(rentAmount) : 0,
+      depositAmount: depositAmount !== undefined && depositAmount !== '' ? Number(depositAmount) : 0,
       maintenanceAmount: Number(maintenanceAmount || 0),
-      bhkConfig,
-      propertyType,
+      bhkConfig: bhkConfig || '2BHK',
+      propertyType: propertyType || 'apartment',
       floor: floor !== undefined && floor !== '' ? Number(floor) : undefined,
       totalFloors: totalFloors !== undefined && totalFloors !== '' ? Number(totalFloors) : undefined,
       areaSqft: areaSqft !== undefined && areaSqft !== '' ? Number(areaSqft) : undefined,
@@ -260,8 +264,10 @@ export async function POST(request: NextRequest) {
         type: 'Point',
         coordinates: [Number(coordinates[0]), Number(coordinates[1])],
       },
-      furnishingStatus,
-      tenantPreference,
+      furnishingStatus: furnishingStatus || 'unfurnished',
+      tenantPreference: Array.isArray(tenantPreference)
+        ? (tenantPreference.length > 0 ? tenantPreference : ['any'])
+        : (tenantPreference ? [tenantPreference] : ['any']),
       brokerageFlag: Boolean(brokerageFlag),
       brokerageAmount: Number(brokerageAmount || 0),
       amenities: Array.isArray(amenities) ? amenities : [],
@@ -289,6 +295,7 @@ export async function POST(request: NextRequest) {
       allowWhatsappContact: allowWhatsappContact !== false,
       isVerified: true,
       verifiedAt: new Date(),
+      notAvailableFields: naList,
     });
 
     const populatedProperty = await Property.findById(property._id)

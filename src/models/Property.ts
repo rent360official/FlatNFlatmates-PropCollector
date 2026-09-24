@@ -67,7 +67,7 @@ export interface IProperty extends Document {
     coordinates: [number, number]; // [lng, lat]
   };
   furnishingStatus: 'fully_furnished' | 'semi_furnished' | 'unfurnished';
-  tenantPreference: 'family' | 'bachelors' | 'girls' | 'boys' | 'any';
+  tenantPreference: ('family' | 'bachelors' | 'girls' | 'boys' | 'any')[] | string[];
   brokerageFlag: boolean;
   brokerageAmount: number;
   amenities: string[];
@@ -114,6 +114,9 @@ export interface IProperty extends Document {
 
   // --- Analytics & Tracking ---
   viewsCount?: number;
+
+  // --- Unavailable / Hidden Info Flags ---
+  notAvailableFields?: string[];
 
   createdAt: Date;
   updatedAt: Date;
@@ -162,8 +165,9 @@ const PropertySchema: Schema<IProperty> = new Schema(
       required: true,
     },
     tenantPreference: {
-      type: String,
+      type: [String],
       enum: ['family', 'bachelors', 'girls', 'boys', 'any'],
+      default: ['any'],
       required: true,
     },
     brokerageFlag: { type: Boolean, default: false },
@@ -275,6 +279,9 @@ const PropertySchema: Schema<IProperty> = new Schema(
 
     // --- Analytics & Tracking ---
     viewsCount: { type: Number, default: 0 },
+
+    // --- Unavailable / Hidden Info Flags ---
+    notAvailableFields: { type: [String], default: [] },
   },
   { timestamps: true }
 );

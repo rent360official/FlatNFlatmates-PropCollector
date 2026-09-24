@@ -114,6 +114,17 @@ export default function PropertyDetailsPage() {
     property.images?.[0]?.url ||
     'https://images.unsplash.com/photo-1560518883-ce09059eeffa?w=800&auto=format&fit=crop&q=80';
 
+  const isNA = (fieldKey: string) => {
+    return Array.isArray(property.notAvailableFields) && property.notAvailableFields.includes(fieldKey);
+  };
+
+  const renderValOrNA = (fieldKey: string, value: React.ReactNode) => {
+    if (isNA(fieldKey)) {
+      return <span className="text-amber-400 italic text-xs font-normal">Information not available</span>;
+    }
+    return value;
+  };
+
   return (
     <div className="space-y-5 pb-8">
       {/* Top Breadcrumb & Actions */}
@@ -205,7 +216,11 @@ export default function PropertyDetailsPage() {
                 className="h-full w-full object-cover"
               />
               <div className="absolute bottom-3 right-3 rounded-xl bg-slate-950/90 px-3 py-1.5 text-sm font-black text-indigo-300 backdrop-blur-md border border-indigo-500/30">
-                ₹{property.rentAmount?.toLocaleString('en-IN')}/mo
+                {isNA('rentAmount') ? (
+                  <span className="text-amber-400 font-semibold text-xs">Information not available</span>
+                ) : (
+                  `₹${property.rentAmount?.toLocaleString('en-IN')}/mo`
+                )}
               </div>
             </div>
 
@@ -309,40 +324,51 @@ export default function PropertyDetailsPage() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 text-xs">
               <div className="rounded-xl bg-slate-950/60 p-3 border border-slate-800">
                 <span className="text-slate-500">Configuration</span>
-                <p className="mt-1 font-bold text-white text-sm">{property.bhkConfig}</p>
+                <p className="mt-1 font-bold text-white text-sm">
+                  {renderValOrNA('bhkConfig', property.bhkConfig)}
+                </p>
               </div>
 
               <div className="rounded-xl bg-slate-950/60 p-3 border border-slate-800">
                 <span className="text-slate-500">Property Type</span>
-                <p className="mt-1 font-bold text-white text-sm capitalize">{property.propertyType}</p>
+                <p className="mt-1 font-bold text-white text-sm capitalize">
+                  {renderValOrNA('propertyType', property.propertyType)}
+                </p>
               </div>
 
               <div className="rounded-xl bg-slate-950/60 p-3 border border-slate-800">
                 <span className="text-slate-500">Furnishing</span>
                 <p className="mt-1 font-bold text-white text-sm capitalize">
-                  {property.furnishingStatus?.replace('_', ' ')}
+                  {renderValOrNA('furnishingStatus', property.furnishingStatus?.replace('_', ' '))}
                 </p>
               </div>
 
               <div className="rounded-xl bg-slate-950/60 p-3 border border-slate-800">
                 <span className="text-slate-500">Tenant Preference</span>
                 <p className="mt-1 font-bold text-white text-sm capitalize">
-                  {property.tenantPreference}
+                  {renderValOrNA(
+                    'tenantPreference',
+                    Array.isArray(property.tenantPreference)
+                      ? property.tenantPreference.join(', ')
+                      : property.tenantPreference
+                  )}
                 </p>
               </div>
 
-              {property.areaSqft && (
+              {(property.areaSqft || isNA('areaSqft')) && (
                 <div className="rounded-xl bg-slate-950/60 p-3 border border-slate-800">
                   <span className="text-slate-500">Built-up Area</span>
-                  <p className="mt-1 font-bold text-white text-sm">{property.areaSqft} sq.ft</p>
+                  <p className="mt-1 font-bold text-white text-sm">
+                    {renderValOrNA('areaSqft', `${property.areaSqft} sq.ft`)}
+                  </p>
                 </div>
               )}
 
-              {property.floor !== undefined && (
+              {(property.floor !== undefined || isNA('floor')) && (
                 <div className="rounded-xl bg-slate-950/60 p-3 border border-slate-800">
                   <span className="text-slate-500">Floor Level</span>
                   <p className="mt-1 font-bold text-white text-sm">
-                    {property.floor} of {property.totalFloors || 'N/A'}
+                    {renderValOrNA('floor', `${property.floor} of ${property.totalFloors || 'N/A'}`)}
                   </p>
                 </div>
               )}
@@ -357,13 +383,16 @@ export default function PropertyDetailsPage() {
               <div className="rounded-xl bg-slate-950/60 p-3 border border-slate-800">
                 <span className="text-slate-500">Available From</span>
                 <p className="mt-1 font-bold text-white text-sm">
-                  {property.availableFrom
-                    ? new Date(property.availableFrom).toLocaleDateString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })
-                    : 'Immediate'}
+                  {renderValOrNA(
+                    'availableFrom',
+                    property.availableFrom
+                      ? new Date(property.availableFrom).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric',
+                        })
+                      : 'Immediate'
+                  )}
                 </p>
               </div>
             </div>
@@ -375,7 +404,7 @@ export default function PropertyDetailsPage() {
               Description
             </h2>
             <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">
-              {property.description}
+              {renderValOrNA('description', property.description)}
             </p>
           </div>
 
@@ -499,35 +528,41 @@ export default function PropertyDetailsPage() {
               <div className="flex items-center justify-between py-1 border-b border-slate-800">
                 <span className="text-slate-400">Monthly Rent</span>
                 <span className="font-bold text-white text-sm">
-                  ₹{property.rentAmount?.toLocaleString('en-IN')}
+                  {renderValOrNA('rentAmount', `₹${property.rentAmount?.toLocaleString('en-IN')}`)}
                 </span>
               </div>
 
               <div className="flex items-center justify-between py-1 border-b border-slate-800">
                 <span className="text-slate-400">Security Deposit</span>
                 <span className="font-bold text-white text-sm">
-                  ₹{property.depositAmount?.toLocaleString('en-IN')}
+                  {renderValOrNA('depositAmount', `₹${property.depositAmount?.toLocaleString('en-IN')}`)}
                 </span>
               </div>
 
               <div className="flex items-center justify-between py-1 border-b border-slate-800">
                 <span className="text-slate-400">Monthly Maintenance</span>
                 <span className="font-semibold text-slate-300">
-                  {property.maintenanceAmount ? `₹${property.maintenanceAmount.toLocaleString('en-IN')}` : 'Included'}
+                  {renderValOrNA(
+                    'maintenanceAmount',
+                    property.maintenanceAmount ? `₹${property.maintenanceAmount.toLocaleString('en-IN')}` : 'Included'
+                  )}
                 </span>
               </div>
 
               <div className="flex items-center justify-between py-1 border-b border-slate-800">
                 <span className="text-slate-400">Brokerage</span>
                 <span className="font-semibold text-slate-300">
-                  {property.brokerageFlag ? `₹${property.brokerageAmount?.toLocaleString('en-IN')}` : 'No Brokerage'}
+                  {renderValOrNA(
+                    'brokerageAmount',
+                    property.brokerageFlag ? `₹${property.brokerageAmount?.toLocaleString('en-IN')}` : 'No Brokerage'
+                  )}
                 </span>
               </div>
 
               <div className="flex items-center justify-between py-1">
                 <span className="text-slate-400">Min Lease Term</span>
                 <span className="font-semibold text-slate-300">
-                  {property.minLeaseMonths || 11} Months
+                  {renderValOrNA('minLeaseMonths', `${property.minLeaseMonths || 11} Months`)}
                 </span>
               </div>
             </div>
@@ -542,7 +577,7 @@ export default function PropertyDetailsPage() {
             <div className="space-y-2 text-xs">
               <div className="rounded-xl bg-slate-950 p-3 border border-slate-800">
                 <p className="text-slate-300 font-medium leading-relaxed">
-                  {property.addressLine}
+                  {renderValOrNA('addressLine', property.addressLine)}
                 </p>
                 <p className="mt-1 text-[11px] text-indigo-400 font-bold">
                   {property.localityId?.name}, {property.cityId?.name}
