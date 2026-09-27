@@ -30,8 +30,10 @@ import {
   Play,
   UploadCloud,
   Clock,
+  X,
 } from 'lucide-react';
 import MapLocationPicker from '@/components/MapLocationPicker';
+import AutoScrapeModal from '@/components/PropertyForm/AutoScrapeModal';
 
 interface PropertyFormProps {
   initialData?: any;
@@ -212,6 +214,164 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
   const [videoUploadProgress, setVideoUploadProgress] = useState<{ [key: string]: number }>({});
   const videoFileInputRef = useRef<HTMLInputElement | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
+  const [isAutoScrapeOpen, setIsAutoScrapeOpen] = useState(false);
+  const [scrapeWarnings, setScrapeWarnings] = useState<string[]>([]);
+
+  // AI Auto-Scrape success handler
+  const handleAutoScrapeSuccess = (data: any, warnings: string[]) => {
+    setScrapeWarnings(warnings || []);
+    setSubmitError('');
+    setSubmitSuccess(
+      warnings && warnings.length > 0
+        ? `Property details auto-filled! Note: ${warnings.join(' ')}`
+        : 'Property details auto-filled from listing URL. All missing fields have been marked N/A.'
+    );
+
+    setFormData((prev: any) => {
+      const updates: any = {};
+
+      // 1. Strings & Spec fields
+      if (data.title?.trim()) updates.title = data.title.trim();
+      if (data.description?.trim()) updates.description = data.description.trim();
+      if (data.propertyType) updates.propertyType = data.propertyType;
+      if (data.bhkConfig) updates.bhkConfig = data.bhkConfig;
+      if (data.furnishingStatus) updates.furnishingStatus = data.furnishingStatus;
+      if (data.tenantPreference && Array.isArray(data.tenantPreference) && data.tenantPreference.length > 0) {
+        updates.tenantPreference = data.tenantPreference;
+      }
+      if (typeof data.floor === 'number' && !isNaN(data.floor)) updates.floor = data.floor;
+      if (typeof data.totalFloors === 'number' && !isNaN(data.totalFloors)) updates.totalFloors = data.totalFloors;
+      if (typeof data.areaSqft === 'number' && !isNaN(data.areaSqft) && data.areaSqft > 0) updates.areaSqft = data.areaSqft;
+
+      // 2. Financial & Lease fields
+      if (typeof data.rentAmount === 'number' && !isNaN(data.rentAmount) && data.rentAmount > 0) updates.rentAmount = data.rentAmount;
+      if (typeof data.depositAmount === 'number' && !isNaN(data.depositAmount) && data.depositAmount >= 0) updates.depositAmount = data.depositAmount;
+      if (typeof data.maintenanceAmount === 'number' && !isNaN(data.maintenanceAmount)) updates.maintenanceAmount = data.maintenanceAmount;
+      if (typeof data.brokerageFlag === 'boolean') updates.brokerageFlag = data.brokerageFlag;
+      if (typeof data.brokerageAmount === 'number' && !isNaN(data.brokerageAmount)) updates.brokerageAmount = data.brokerageAmount;
+
+      if (data.availableFrom) {
+        const parsedD = new Date(data.availableFrom);
+        updates.availableFrom = !isNaN(parsedD.getTime())
+          ? parsedD.toISOString().split('T')[0]
+          : new Date().toISOString().split('T')[0];
+      }
+
+      if (typeof data.minLeaseMonths === 'number' && !isNaN(data.minLeaseMonths)) updates.minLeaseMonths = data.minLeaseMonths;
+      if (typeof data.lockInMonths === 'number' && !isNaN(data.lockInMonths)) updates.lockInMonths = data.lockInMonths;
+
+      // 3. Utilities & Policies
+      if (data.powerBackup) updates.powerBackup = data.powerBackup;
+      if (data.waterSupplyType) updates.waterSupplyType = data.waterSupplyType;
+      if (data.parkingType) updates.parkingType = data.parkingType;
+      if (typeof data.evChargingAvailable === 'boolean') updates.evChargingAvailable = data.evChargingAvailable;
+      if (data.petPolicy) updates.petPolicy = data.petPolicy;
+      if (typeof data.maxOccupants === 'number' && !isNaN(data.maxOccupants)) updates.maxOccupants = data.maxOccupants;
+      if (typeof data.fiberAvailable === 'boolean') updates.fiberAvailable = data.fiberAvailable;
+      if (typeof data.avgSpeedMbps === 'number' && !isNaN(data.avgSpeedMbps)) updates.avgSpeedMbps = data.avgSpeedMbps;
+      if (data.addressLine?.trim()) updates.addressLine = data.addressLine.trim();
+
+      // 4. Amenities, Rules, Safety
+      if (data.amenities && Array.isArray(data.amenities) && data.amenities.length > 0) {
+        updates.amenities = Array.from(new Set([...(prev.amenities || []), ...data.amenities]));
+      }
+      if (data.houseRules && Array.isArray(data.houseRules) && data.houseRules.length > 0) {
+        updates.houseRules = Array.from(new Set([...(prev.houseRules || []), ...data.houseRules]));
+      }
+      if (data.safetyFeatures && Array.isArray(data.safetyFeatures) && data.safetyFeatures.length > 0) {
+        updates.safetyFeatures = Array.from(new Set([...(prev.safetyFeatures || []), ...data.safetyFeatures]));
+      }
+
+      // 5. City & Locality mapping
+      if (data.cityId) {
+        updates.cityId = data.cityId;
+      } else if (data.cityName) {
+        const matchedCity = cities.find(
+          (c) => c.name.toLowerCase() === data.cityName.toLowerCase()
+        );
+        if (matchedCity) updates.cityId = matchedCity._id;
+      }
+
+      if (data.localityId) {
+        updates.localityId = data.localityId;
+      }
+
+      if (data.lat !== undefined && data.lat !== null && data.lat !== '') updates.lat = data.lat;
+      if (data.lng !== undefined && data.lng !== null && data.lng !== '') updates.lng = data.lng;
+
+      // 6. Compute Mark N/A for all candidate fields
+      const CANDIDATE_NA_FIELDS: { key: string; isPresent: (d: any) => boolean }[] = [
+        { key: 'title', isPresent: (d) => Boolean(d.title?.trim()) },
+        { key: 'description', isPresent: (d) => Boolean(d.description?.trim()) },
+        { key: 'propertyType', isPresent: (d) => Boolean(d.propertyType) },
+        { key: 'bhkConfig', isPresent: (d) => Boolean(d.bhkConfig) },
+        { key: 'furnishingStatus', isPresent: (d) => Boolean(d.furnishingStatus) },
+        { key: 'tenantPreference', isPresent: (d) => Boolean(d.tenantPreference && (Array.isArray(d.tenantPreference) ? d.tenantPreference.length > 0 : true)) },
+        { key: 'areaSqft', isPresent: (d) => typeof d.areaSqft === 'number' && d.areaSqft > 0 },
+        { key: 'floor', isPresent: (d) => typeof d.floor === 'number' && !isNaN(d.floor) },
+        { key: 'totalFloors', isPresent: (d) => typeof d.totalFloors === 'number' && !isNaN(d.totalFloors) },
+        { key: 'rentAmount', isPresent: (d) => typeof d.rentAmount === 'number' && d.rentAmount > 0 },
+        { key: 'depositAmount', isPresent: (d) => typeof d.depositAmount === 'number' && d.depositAmount > 0 },
+        { key: 'maintenanceAmount', isPresent: (d) => typeof d.maintenanceAmount === 'number' && !isNaN(d.maintenanceAmount) && d.maintenanceAmount > 0 },
+        { key: 'availableFrom', isPresent: (d) => Boolean(d.availableFrom?.trim()) },
+        { key: 'minLeaseMonths', isPresent: (d) => typeof d.minLeaseMonths === 'number' && !isNaN(d.minLeaseMonths) },
+        { key: 'lockInMonths', isPresent: (d) => typeof d.lockInMonths === 'number' && !isNaN(d.lockInMonths) },
+        { key: 'powerBackup', isPresent: (d) => Boolean(d.powerBackup) && d.powerBackup !== 'none' },
+        { key: 'waterSupplyType', isPresent: (d) => Boolean(d.waterSupplyType) },
+        { key: 'parkingType', isPresent: (d) => Boolean(d.parkingType) && d.parkingType !== 'none' },
+        { key: 'petPolicy', isPresent: (d) => Boolean(d.petPolicy) },
+        { key: 'maxOccupants', isPresent: (d) => typeof d.maxOccupants === 'number' && !isNaN(d.maxOccupants) },
+        { key: 'evChargingAvailable', isPresent: (d) => typeof d.evChargingAvailable === 'boolean' },
+      ];
+
+      const newNAFields = new Set<string>(Array.isArray(prev.notAvailableFields) ? prev.notAvailableFields : []);
+
+      for (const item of CANDIDATE_NA_FIELDS) {
+        if (item.isPresent(data)) {
+          // If present in scraped data, ensure it is NOT marked as N/A
+          newNAFields.delete(item.key);
+        } else {
+          // If missing in scraped data and not already manually set, mark as N/A
+          const currentVal = updates[item.key] !== undefined ? updates[item.key] : prev[item.key];
+          const hasManualValue = currentVal !== undefined && currentVal !== null && currentVal !== '' && (Array.isArray(currentVal) ? currentVal.length > 0 : true);
+          if (!hasManualValue) {
+            newNAFields.add(item.key);
+          }
+        }
+      }
+
+      updates.notAvailableFields = Array.from(newNAFields);
+
+      const merged = { ...prev, ...updates };
+      saveDraftToLocalStorage(merged, newOwner);
+      return merged;
+    });
+
+    // If cityId was matched, ensure localities are fetched for that city
+    if (data.cityId) {
+      setFetchingLocalities(true);
+      fetch(`/api/localities?cityId=${data.cityId}`)
+        .then((res) => res.json())
+        .then((locData) => {
+          if (locData.localities) {
+            setLocalities(locData.localities);
+            if (!data.localityId && data.localityName) {
+              const matchedLoc = locData.localities.find(
+                (l: any) =>
+                  l.name.toLowerCase() === data.localityName.toLowerCase() ||
+                  data.localityName.toLowerCase().includes(l.name.toLowerCase()) ||
+                  l.name.toLowerCase().includes(data.localityName.toLowerCase())
+              );
+              if (matchedLoc) {
+                setFormData((p: any) => ({ ...p, localityId: matchedLoc._id }));
+              }
+            }
+          }
+        })
+        .catch((e) => console.error('Error fetching localities for auto-scraped city:', e))
+        .finally(() => setFetchingLocalities(false));
+    }
+  };
 
   // Fetch dynamic media limits from admin config
   useEffect(() => {
@@ -1042,12 +1202,12 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
           {!isEditMode && (
             <button
               type="button"
-              onClick={handleAutoGenerateContent}
-              className="flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-950/40 px-3 py-2 text-xs font-semibold text-indigo-300 hover:bg-indigo-900/60 transition"
-              title="Auto-generate Title & Description from selected specs"
+              onClick={() => setIsAutoScrapeOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-gradient-to-r from-indigo-950/80 to-purple-950/80 px-3.5 py-2 text-xs font-bold text-indigo-200 hover:from-indigo-900/80 hover:to-purple-900/80 hover:border-indigo-400 transition active-press shadow-sm"
+              title="Auto-scrape property details from listing URL using Gemini AI"
             >
-              <Wand2 className="h-3.5 w-3.5 text-indigo-400" />
-              <span>Smart Fill</span>
+              <Sparkles className="h-4 w-4 text-indigo-400" />
+              <span>AI Auto-Scrape</span>
             </button>
           )}
 
@@ -2011,6 +2171,27 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
                     </button>
                   );
                 })}
+
+                {/* Render Custom Amenities (those not in POPULAR_AMENITIES) */}
+                {formData.amenities
+                  ?.filter((item: string) => !POPULAR_AMENITIES.includes(item))
+                  .map((customItem: string) => (
+                    <span
+                      key={customItem}
+                      className="flex items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-indigo-950/80 px-3 py-1.5 text-xs font-medium text-indigo-200 shadow-sm"
+                    >
+                      <Check className="h-3 w-3 text-indigo-400" />
+                      <span>{customItem}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleAmenity(customItem)}
+                        className="ml-0.5 rounded-full p-0.5 text-indigo-400 hover:bg-indigo-900/80 hover:text-white"
+                        title="Remove custom amenity"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
               </div>
 
               {/* Add Custom Amenity */}
@@ -2020,7 +2201,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
                   value={customAmenity}
                   onChange={(e) => setCustomAmenity(e.target.value)}
                   placeholder="Custom amenity..."
-                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white outline-none"
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white outline-none focus:border-indigo-500"
                 />
                 <button
                   type="button"
@@ -2030,7 +2211,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
                       setCustomAmenity('');
                     }
                   }}
-                  className="rounded-xl bg-slate-800 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-700"
+                  className="rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700"
                 >
                   Add
                 </button>
@@ -2061,6 +2242,50 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
                     </button>
                   );
                 })}
+
+                {/* Render Custom Rules */}
+                {formData.houseRules
+                  ?.filter((rule: string) => !POPULAR_RULES.includes(rule))
+                  .map((customR: string) => (
+                    <span
+                      key={customR}
+                      className="flex items-center gap-1.5 rounded-xl border border-purple-500/40 bg-purple-950/80 px-3 py-1.5 text-xs font-medium text-purple-200 shadow-sm"
+                    >
+                      <Check className="h-3 w-3 text-purple-400" />
+                      <span>{customR}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleRule(customR)}
+                        className="ml-0.5 rounded-full p-0.5 text-purple-400 hover:bg-purple-900/80 hover:text-white"
+                        title="Remove custom rule"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+              </div>
+
+              {/* Add Custom House Rule */}
+              <div className="mt-3 flex gap-2 max-w-sm">
+                <input
+                  type="text"
+                  value={customRule}
+                  onChange={(e) => setCustomRule(e.target.value)}
+                  placeholder="Custom rule..."
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (customRule.trim()) {
+                      toggleRule(customRule.trim());
+                      setCustomRule('');
+                    }
+                  }}
+                  className="rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                >
+                  Add
+                </button>
               </div>
             </div>
 
@@ -2088,6 +2313,50 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
                     </button>
                   );
                 })}
+
+                {/* Render Custom Safety Features */}
+                {formData.safetyFeatures
+                  ?.filter((safety: string) => !POPULAR_SAFETY.includes(safety))
+                  .map((customS: string) => (
+                    <span
+                      key={customS}
+                      className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-950/80 px-3 py-1.5 text-xs font-medium text-emerald-200 shadow-sm"
+                    >
+                      <Check className="h-3 w-3 text-emerald-400" />
+                      <span>{customS}</span>
+                      <button
+                        type="button"
+                        onClick={() => toggleSafety(customS)}
+                        className="ml-0.5 rounded-full p-0.5 text-emerald-400 hover:bg-emerald-900/80 hover:text-white"
+                        title="Remove custom safety feature"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
+              </div>
+
+              {/* Add Custom Safety Feature */}
+              <div className="mt-3 flex gap-2 max-w-sm">
+                <input
+                  type="text"
+                  value={customSafety}
+                  onChange={(e) => setCustomSafety(e.target.value)}
+                  placeholder="Custom safety feature..."
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-1.5 text-xs text-white outline-none focus:border-emerald-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (customSafety.trim()) {
+                      toggleSafety(customSafety.trim());
+                      setCustomSafety('');
+                    }
+                  }}
+                  className="rounded-xl bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-700"
+                >
+                  Add
+                </button>
               </div>
             </div>
           </div>
@@ -2664,6 +2933,13 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
           <ArrowRight className="h-4 w-4" />
         </button>
       </div>
+
+      {/* AI Auto-Scrape Modal */}
+      <AutoScrapeModal
+        isOpen={isAutoScrapeOpen}
+        onClose={() => setIsAutoScrapeOpen(false)}
+        onSuccess={handleAutoScrapeSuccess}
+      />
     </div>
   );
 }
