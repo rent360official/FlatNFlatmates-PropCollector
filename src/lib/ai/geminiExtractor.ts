@@ -126,41 +126,68 @@ const PROPERTY_EXTRACTION_SCHEMA: Schema = {
 
 const SYSTEM_INSTRUCTION = `
 You are an expert real estate data extraction assistant for "Property Collector" (FlatNFlatmates admin app).
-You are provided with raw text and JSON-LD metadata extracted from a real estate listing webpage.
+You are provided with either raw text, copied listing descriptions, or webpage content/JSON-LD from a real estate listing (such as MagicBricks, Housing.com, 99acres, NoBroker, OLX, WhatsApp listing messages, etc.).
 
 CRITICAL INSTRUCTIONS:
 1. SINGLE PRIMARY PROPERTY ONLY:
-   The webpage may contain ONE primary property listing being viewed, plus unrelated suggested/recommended listings or ads.
-   You must extract information ONLY for the SINGLE MAIN/PRIMARY property on this page.
-   STRICTLY IGNORE all suggested/recommended/similar listings.
+   Extract information ONLY for the SINGLE MAIN/PRIMARY property in this text.
+   Strictly ignore unrelated suggested/recommended listings or ads.
 
-2. EXACT FIELD NAMING & TYPES:
+2. ACCURATE FIELD EXTRACTION & PARSING:
    Strictly output valid JSON matching the schema properties:
-   - rentAmount: Monthly rent number (e.g. 33000 for 33k/month)
-   - depositAmount: Security deposit number (e.g. 75000)
-   - areaSqft: Built-up / carpet area number in sq. ft. (e.g. 959)
-   - cityName: City name (e.g. Pune, Bangalore, Mumbai)
-   - localityName: Locality / Sub-locality (e.g. Kharadi, Wakad, Whitefield)
-   - addressLine: Building / Society name and street address (e.g. SG Lanke Vishwajeet Residency, Tulaja Bhawani Nagar, Kharadi)
-   - bhkConfig: "1RK" | "1BHK" | "2BHK" | "3BHK" | "4BHK+"
-   - propertyType: "apartment" | "house" | "villa" | "pg_hostel"
-   - furnishingStatus: "fully_furnished" | "semi_furnished" | "unfurnished"
-   - tenantPreference: list of "family" | "bachelors" | "girls" | "boys" | "any"
-   - floor: Integer floor number if stated
-   - totalFloors: Integer total floors in building if stated
-   - powerBackup: "none" | "partial" | "full"
-   - waterSupplyType: "municipal" | "borewell" | "tanker" | "mixed"
-   - parkingType: "none" | "two_wheeler" | "four_wheeler" | "both"
-   - petPolicy: "allowed" | "not_allowed" | "case_by_case"
-   - availableFrom: "YYYY-MM-DD" or "Immediately"
-   - amenities: List of all amenities, society facilities, and appliances/furnishings
+   - rentAmount: Monthly rent numeric in INR (e.g. "33k" -> 33000, "₹28,500/m" -> 28500, "1.2 Lakh" -> 120000).
+   - depositAmount: Security deposit numeric in INR (e.g. "75,000" -> 75000, "2 months rent" -> 2 * rentAmount, "1 Lakh" -> 100000, "Zero Deposit" -> 0).
+   - maintenanceAmount: Monthly maintenance in INR (numeric only, 0 if included in rent or none).
+   - brokerageFlag: boolean. false if "Zero Brokerage", "No Brokerage", or "Direct Owner". true if brokerage fee is charged.
+   - brokerageAmount: numeric brokerage amount if mentioned (e.g. 15000, or 0 if no brokerage).
+   - availableFrom: "YYYY-MM-DD" format. If "Immediately", "Ready to move", or "Available now", use today's date format YYYY-MM-DD.
+   - minLeaseMonths: integer minimum lease period in months (standard default 11 if unspecified).
+   - lockInMonths: integer lock-in period in months (0 if not mentioned).
+   
+   - bhkConfig: "1RK" | "1BHK" | "2BHK" | "3BHK" | "4BHK+".
+     * 1 RK / Studio / Single Room -> "1RK"
+     * 1 BHK / 1 Bed -> "1BHK"
+     * 2 BHK / 2 Bed / 2.5 BHK -> "2BHK"
+     * 3 BHK / 3 Bed / 3.5 BHK -> "3BHK"
+     * 4 BHK / 4+ Bed / 5 BHK -> "4BHK+"
+   
+   - propertyType: "apartment" | "house" | "villa" | "pg_hostel".
+     * High-rise, flat, multi-storey, condo, society apartment -> "apartment"
+     * Independent house, builder floor, row house, duplex house -> "house"
+     * Villa, independent bungalow, luxury villa -> "villa"
+     * PG, paying guest, hostel, co-living space -> "pg_hostel"
+
+   - furnishingStatus: "fully_furnished" | "semi_furnished" | "unfurnished".
+   - tenantPreference: list of "family" | "bachelors" | "girls" | "boys" | "any". (e.g. if text says "Family & Bachelors allowed", return ["family", "bachelors"]).
+   - floor: Integer floor number (0 for Ground, -1 for Basement, 3 for 3rd floor).
+   - totalFloors: Total number of floors in building / society.
+   - areaSqft: Carpet / built-up / super built-up area in sq. ft. as a pure number.
+   - cityName: City name (e.g. Pune, Bangalore, Mumbai, Delhi NCR, Hyderabad, Gurgaon, Noida, Chennai).
+   - localityName: Locality / Sub-locality / Area (e.g. Kharadi, Whitefield, HSR Layout, Indiranagar, Powai, Wakad, Koramangala, Baner).
+   - addressLine: Building / Society name, landmark, and street address.
+
+   - amenities: Comprehensive list of all amenities, society facilities, furnishings, and appliances mentioned in the text.
+     (e.g. WiFi, Air Conditioner, Refrigerator, Washing Machine, Geyser, Television, Lift, Power Backup, Gym, Swimming Pool, Covered Parking, Security Guard, CCTV, Balcony, Modular Kitchen, Water Purifier, Microwave, Sofa, Dining Table, Gas Pipeline, Fans, Lights, Wardrobe, Bed, Clubhouse, Children Play Area, Intercom, etc.)
+
+   - houseRules: List of house rules mentioned (e.g. "No Smoking inside", "No Loud Music after 10 PM", "Pets Allowed", "Visitors Allowed", "Veg Cooking Only", "Gate closes at 11 PM", etc.).
+   - safetyFeatures: Safety & security features (e.g. "Gated Community", "24/7 Security Guard", "CCTV Surveillance", "Fire Extinguisher", "Biometric / Keycard Access", "Intercom Facility").
+   - powerBackup: "none" | "partial" | "full". ("100% backup", "24x7 generator", "DG backup" -> "full"; "inverter", "fans & lights backup" -> "partial").
+   - waterSupplyType: "municipal" | "borewell" | "tanker" | "mixed". ("Cauvery", "Municipal", "Corporation", "24 Hours water" -> "municipal").
+   - parkingType: "none" | "two_wheeler" | "four_wheeler" | "both". ("Car & Bike" -> "both", "Car parking" -> "four_wheeler", "Two wheeler" -> "two_wheeler").
+   - evChargingAvailable: boolean (true if EV charging is present).
+   - petPolicy: "allowed" | "not_allowed" | "case_by_case".
+   - maxOccupants: Integer maximum allowed occupants.
+   - fiberAvailable: boolean.
+   - avgSpeedMbps: number.
 
 3. EXCLUSIONS:
-   - DO NOT extract any image URLs, photo links, or media URLs.
-   - DO NOT extract owner/agent/broker contact numbers, personal names, or email addresses.
+   - DO NOT extract any image URLs or photo links.
+   - DO NOT extract owner/agent/broker contact phone numbers, personal names, or email addresses.
 
-4. NO FABRICATIONS:
-   If a field is not mentioned on the page, set it to null. Do not invent arbitrary figures.
+4. ACCURACY & INFERENCE:
+   - If a specific field is not mentioned or cannot be reliably inferred, set it to null. Do not hallucinate fake values.
+   - If title is missing in raw text, synthesize a clear, catchy title from BHK, property type, and locality (e.g. "2BHK Semi Furnished Apartment in Kharadi, Pune").
+   - If description is brief, summarize the property features into a well-written paragraph.
 `;
 
 /**
@@ -545,21 +572,140 @@ function sanitizeExtractedData(data: any): ExtractedPropertyData {
     clean.petPolicy = 'allowed';
   }
 
+  // Standard Amenities Normalization Map
+  const AMENITY_NORMALIZATION: Record<string, string> = {
+    'ac': 'Air Conditioner',
+    'air conditioner': 'Air Conditioner',
+    'air conditioning': 'Air Conditioner',
+    'a/c': 'Air Conditioner',
+    'wifi': 'WiFi',
+    'wi-fi': 'WiFi',
+    'internet': 'WiFi',
+    'broadband': 'WiFi',
+    'fridge': 'Refrigerator',
+    'refrigerator': 'Refrigerator',
+    'washing machine': 'Washing Machine',
+    'wm': 'Washing Machine',
+    'geyser': 'Geyser',
+    'water heater': 'Geyser',
+    'tv': 'Television',
+    'television': 'Television',
+    'smart tv': 'Television',
+    'led tv': 'Television',
+    'lift': 'Lift',
+    'elevator': 'Lift',
+    'power backup': 'Power Backup',
+    'dg backup': 'Power Backup',
+    'inverter': 'Power Backup',
+    'full power backup': 'Power Backup',
+    '100% power backup': 'Power Backup',
+    'gym': 'Gym',
+    'gymnasium': 'Gym',
+    'fitness center': 'Gym',
+    'swimming pool': 'Swimming Pool',
+    'pool': 'Swimming Pool',
+    'covered parking': 'Covered Parking',
+    'car parking': 'Covered Parking',
+    'reserved parking': 'Covered Parking',
+    'security guard': 'Security Guard',
+    'security': 'Security Guard',
+    '24/7 security': 'Security Guard',
+    '24x7 security': 'Security Guard',
+    'cctv': 'CCTV',
+    'cctv surveillance': 'CCTV',
+    'cctv cameras': 'CCTV',
+    'balcony': 'Balcony',
+    'balconies': 'Balcony',
+    'modular kitchen': 'Modular Kitchen',
+    'kitchen': 'Modular Kitchen',
+    'water purifier': 'Water Purifier',
+    'ro': 'Water Purifier',
+    'ro water': 'Water Purifier',
+    'microwave': 'Microwave',
+    'microwave oven': 'Microwave',
+    'oven': 'Microwave',
+    'sofa': 'Sofa',
+    'sofa set': 'Sofa',
+    'couch': 'Sofa',
+    'dining table': 'Dining Table',
+    'dining set': 'Dining Table',
+    'gas pipeline': 'Gas Pipeline',
+    'piped gas': 'Gas Pipeline',
+    'png': 'Gas Pipeline',
+  };
+
+  const RULE_NORMALIZATION: Record<string, string> = {
+    'no smoking': 'No Smoking inside',
+    'no smoking inside': 'No Smoking inside',
+    'smoking not allowed': 'No Smoking inside',
+    'no loud music': 'No Loud Music after 10 PM',
+    'no loud music after 10 pm': 'No Loud Music after 10 PM',
+    'no party': 'No Loud Music after 10 PM',
+    'pets allowed': 'Pets Allowed',
+    'pet friendly': 'Pets Allowed',
+    'visitors allowed': 'Visitors Allowed',
+    'guests allowed': 'Visitors Allowed',
+    'veg only': 'Veg Cooking Only',
+    'vegetarian only': 'Veg Cooking Only',
+    'veg cooking only': 'Veg Cooking Only',
+    'gate closes at 11 pm': 'Gate closes at 11 PM',
+    'gate timing': 'Gate closes at 11 PM',
+  };
+
+  const SAFETY_NORMALIZATION: Record<string, string> = {
+    'gated community': 'Gated Community',
+    'gated society': 'Gated Community',
+    '24/7 security guard': '24/7 Security Guard',
+    'security guard': '24/7 Security Guard',
+    '24x7 security': '24/7 Security Guard',
+    'cctv surveillance': 'CCTV Surveillance',
+    'cctv': 'CCTV Surveillance',
+    'cctv camera': 'CCTV Surveillance',
+    'fire extinguisher': 'Fire Extinguisher',
+    'fire safety': 'Fire Extinguisher',
+    'biometric / keycard access': 'Biometric / Keycard Access',
+    'biometric access': 'Biometric / Keycard Access',
+    'keycard access': 'Biometric / Keycard Access',
+    'intercom facility': 'Intercom Facility',
+    'intercom': 'Intercom Facility',
+  };
+
   // Merge Amenities & Furnishing items
   const combinedAmenities: string[] = [
     ...(Array.isArray(data.amenities) ? data.amenities : []),
     ...(Array.isArray(data.furnishings) ? data.furnishings : []),
   ];
   if (combinedAmenities.length > 0) {
-    clean.amenities = Array.from(new Set(combinedAmenities.map((a) => String(a).trim()).filter(Boolean)));
+    const normalizedAmenities = combinedAmenities
+      .map((a) => {
+        const str = String(a).trim();
+        const lower = str.toLowerCase();
+        return AMENITY_NORMALIZATION[lower] || str;
+      })
+      .filter(Boolean);
+    clean.amenities = Array.from(new Set(normalizedAmenities));
   }
 
   if (Array.isArray(data.houseRules)) {
-    clean.houseRules = Array.from(new Set(data.houseRules.map((r: any) => String(r).trim()).filter(Boolean)));
+    const normalizedRules = data.houseRules
+      .map((r: any) => {
+        const str = String(r).trim();
+        const lower = str.toLowerCase();
+        return RULE_NORMALIZATION[lower] || str;
+      })
+      .filter(Boolean);
+    clean.houseRules = Array.from(new Set(normalizedRules));
   }
 
   if (Array.isArray(data.safetyFeatures)) {
-    clean.safetyFeatures = Array.from(new Set(data.safetyFeatures.map((s: any) => String(s).trim()).filter(Boolean)));
+    const normalizedSafety = data.safetyFeatures
+      .map((s: any) => {
+        const str = String(s).trim();
+        const lower = str.toLowerCase();
+        return SAFETY_NORMALIZATION[lower] || str;
+      })
+      .filter(Boolean);
+    clean.safetyFeatures = Array.from(new Set(normalizedSafety));
   }
 
   return clean;

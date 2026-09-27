@@ -41,31 +41,50 @@ export async function POST(request: NextRequest) {
 
     // 3. Body validation
     const body = await request.json().catch(() => ({}));
-    const { url } = body;
+    const { url, rawText } = body;
 
-    if (!url || typeof url !== 'string') {
+    const hasRawText = typeof rawText === 'string' && rawText.trim().length >= 5;
+    const hasUrl = typeof url === 'string' && url.trim().length > 0;
+
+    if (!hasRawText && !hasUrl) {
       return NextResponse.json(
-        { error: 'A valid listing URL is required.' },
+        { error: 'Please enter a property listing URL or paste listing text.' },
         { status: 400 }
       );
     }
-    targetUrl = url.trim();
 
-    // 4. SSRF & URL validation
-    const urlValidation = await validateScrapeUrl(targetUrl);
-    if (!urlValidation.isValid || !urlValidation.sanitizedUrl) {
-      return NextResponse.json(
-        { error: urlValidation.error || 'Invalid or forbidden URL.' },
-        { status: 400 }
-      );
+    let textToAnalyze = '';
+    let scrapeMethod: 'HTTP' | 'HEADLESS_BROWSER' | 'MANUAL_TEXT' = 'MANUAL_TEXT';
+    let safeUrl = '';
+
+    if (hasRawText) {
+      // Direct raw text analysis
+      textToAnalyze = rawText.trim();
+      scrapeMethod = 'MANUAL_TEXT';
+      safeUrl = hasUrl ? url.trim() : 'manual-text-paste';
+      targetUrl = safeUrl;
+    } else {
+      // Webpage scraping flow
+      targetUrl = url.trim();
+
+      // 4. SSRF & URL validation
+      const urlValidation = await validateScrapeUrl(targetUrl);
+      if (!urlValidation.isValid || !urlValidation.sanitizedUrl) {
+        return NextResponse.json(
+          { error: urlValidation.error || 'Invalid or forbidden URL.' },
+          { status: 400 }
+        );
+      }
+      safeUrl = urlValidation.sanitizedUrl;
+
+      // 5. Scrape webpage content (HTTP + Playwright fallback)
+      const scrapeResult = await scrapePropertyPage(safeUrl);
+      textToAnalyze = scrapeResult.text;
+      scrapeMethod = scrapeResult.method as any;
     }
-    const safeUrl = urlValidation.sanitizedUrl;
-
-    // 5. Scrape webpage content (HTTP + Playwright fallback)
-    const scrapeResult = await scrapePropertyPage(safeUrl);
 
     // 6. Gemini AI Extraction
-    const aiResult = await extractPropertyWithGemini(scrapeResult.text);
+    const aiResult = await extractPropertyWithGemini(textToAnalyze);
 
     // 7. DB Lookup: Match City & Locality to system IDs
     let matchedCityId: string | null = null;
@@ -170,8 +189,8 @@ export async function POST(request: NextRequest) {
       url: safeUrl,
       status: 'SUCCESS',
       durationMs,
-      method: scrapeResult.method,
-      contentLength: scrapeResult.text.length,
+      method: scrapeMethod as any,
+      contentLength: textToAnalyze.length,
       modelUsed: aiResult.modelUsed,
     });
 
@@ -190,7 +209,7 @@ export async function POST(request: NextRequest) {
       data: finalPayload,
       warnings: aiResult.warnings || [],
       sourceUrl: safeUrl,
-      method: scrapeResult.method,
+      method: scrapeMethod,
     });
   } catch (error: any) {
     const durationMs = Date.now() - startTime;

@@ -224,7 +224,7 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
     setSubmitSuccess(
       warnings && warnings.length > 0
         ? `Property details auto-filled! Note: ${warnings.join(' ')}`
-        : 'Property details auto-filled from listing URL. All missing fields have been marked N/A.'
+        : 'Property details auto-filled successfully! All missing fields have been marked N/A.'
     );
 
     setFormData((prev: any) => {
@@ -1204,10 +1204,10 @@ export default function PropertyForm({ initialData, isEditMode = false }: Proper
               type="button"
               onClick={() => setIsAutoScrapeOpen(true)}
               className="flex items-center gap-1.5 rounded-xl border border-indigo-500/40 bg-gradient-to-r from-indigo-950/80 to-purple-950/80 px-3.5 py-2 text-xs font-bold text-indigo-200 hover:from-indigo-900/80 hover:to-purple-900/80 hover:border-indigo-400 transition active-press shadow-sm"
-              title="Auto-scrape property details from listing URL using Gemini AI"
+              title="Auto-extract property details from URL or pasted listing text using Gemini AI"
             >
               <Sparkles className="h-4 w-4 text-indigo-400" />
-              <span>AI Auto-Scrape</span>
+              <span>AI Auto-Extract</span>
             </button>
           )}
 
