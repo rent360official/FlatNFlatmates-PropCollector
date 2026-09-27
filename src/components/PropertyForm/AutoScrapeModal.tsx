@@ -1,6 +1,4 @@
-'use client';
-
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sparkles,
   X,
@@ -12,6 +10,8 @@ import {
   Trash2,
   ArrowRight,
   Info,
+  Cpu,
+  RotateCcw,
 } from 'lucide-react';
 
 interface AutoScrapeModalProps {
@@ -20,14 +20,62 @@ interface AutoScrapeModalProps {
   onSuccess: (extractedData: any, warnings: string[]) => void;
 }
 
+export const CAPABLE_GEMINI_MODELS = [
+  { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash (Recommended - Fastest & Most Accurate)' },
+  { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash (High Reasoning & Structure Accuracy)' },
+  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash (Fast & Reliable Extraction)' },
+  { id: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash (Balanced Performance)' },
+  { id: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro (Deep Complex Reasoning)' },
+  { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite (Ultra Fast & Lightweight)' },
+  { id: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite (Lightweight Extraction)' },
+  { id: 'gemini-3-flash-preview', label: 'Gemini 3 Flash Preview (General Text)' },
+  { id: 'custom', label: '✏️ Custom Model ID (Type manually...)' },
+];
+
+const DEFAULT_GEMINI_MODEL = 'gemini-3.8-flash';
+
 export default function AutoScrapeModal({ isOpen, onClose, onSuccess }: AutoScrapeModalProps) {
   const [activeMode, setActiveMode] = useState<'url' | 'text'>('url');
   const [url, setUrl] = useState('');
   const [rawText, setRawText] = useState('');
+  const [modelId, setModelId] = useState(DEFAULT_GEMINI_MODEL);
+  const [isCustomModel, setIsCustomModel] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Load saved model ID from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedModel = localStorage.getItem('fnf_gemini_model_id');
+      if (savedModel && savedModel.trim()) {
+        const trimmed = savedModel.trim();
+        setModelId(trimmed);
+        const isPredefined = CAPABLE_GEMINI_MODELS.some((m) => m.id === trimmed && m.id !== 'custom');
+        setIsCustomModel(!isPredefined);
+      }
+    }
+  }, []);
+
+  const handleDropdownSelect = (selectedVal: string) => {
+    if (selectedVal === 'custom') {
+      setIsCustomModel(true);
+    } else {
+      setIsCustomModel(false);
+      setModelId(selectedVal);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('fnf_gemini_model_id', selectedVal);
+      }
+    }
+  };
+
+  const handleCustomModelInput = (newModel: string) => {
+    setModelId(newModel);
+    if (typeof window !== 'undefined' && newModel.trim()) {
+      localStorage.setItem('fnf_gemini_model_id', newModel.trim());
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -88,17 +136,19 @@ export default function AutoScrapeModal({ isOpen, onClose, onSuccess }: AutoScra
     e.preventDefault();
     setError(null);
 
-    let payload: { url?: string; rawText?: string } = {};
+    let payload: { url?: string; rawText?: string; model?: string } = {
+      model: modelId.trim() || DEFAULT_GEMINI_MODEL,
+    };
 
     if (activeMode === 'url') {
       if (!validateUrl(url)) return;
-      payload = { url: url.trim() };
+      payload.url = url.trim();
       if (rawText.trim()) {
         payload.rawText = rawText.trim();
       }
     } else {
       if (!validateRawText(rawText)) return;
-      payload = { rawText: rawText.trim() };
+      payload.rawText = rawText.trim();
       if (url.trim()) {
         payload.url = url.trim();
       }
@@ -301,6 +351,65 @@ export default function AutoScrapeModal({ isOpen, onClose, onSuccess }: AutoScra
               </div>
             </div>
           )}
+
+          {/* Gemini Model Selector Dropdown & Custom Input */}
+          <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label htmlFor="gemini-model-select" className="flex items-center gap-1.5 text-xs font-semibold text-slate-200">
+                <Cpu className="h-3.5 w-3.5 text-indigo-400" />
+                <span>Gemini AI Model</span>
+              </label>
+              {modelId !== DEFAULT_GEMINI_MODEL && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCustomModel(false);
+                    handleDropdownSelect(DEFAULT_GEMINI_MODEL);
+                  }}
+                  className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-indigo-300 transition"
+                  title="Reset to default model (Gemini 3.8 Flash)"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  <span>Reset Default</span>
+                </button>
+              )}
+            </div>
+
+            {/* Model Dropdown */}
+            <div>
+              <select
+                id="gemini-model-select"
+                disabled={loading}
+                value={isCustomModel ? 'custom' : modelId}
+                onChange={(e) => handleDropdownSelect(e.target.value)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-900 py-2 px-3 text-xs font-medium text-white outline-none focus:border-indigo-500 disabled:opacity-60 cursor-pointer"
+              >
+                {CAPABLE_GEMINI_MODELS.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Custom Model Text Input (Displayed when custom is selected or custom string typed) */}
+            {isCustomModel && (
+              <div className="space-y-1 pt-1 animate-in fade-in duration-150">
+                <label htmlFor="custom-model-id" className="block text-[11px] font-medium text-indigo-300">
+                  Enter Custom Model Endpoint ID:
+                </label>
+                <input
+                  id="custom-model-id"
+                  type="text"
+                  disabled={loading}
+                  value={modelId}
+                  onChange={(e) => handleCustomModelInput(e.target.value)}
+                  placeholder="e.g. gemini-3.6-flash, gemini-3.8-flash, etc."
+                  className="w-full rounded-lg border border-indigo-500/50 bg-slate-900 px-3 py-1.5 text-xs text-indigo-200 placeholder-slate-500 font-mono outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
+                />
+              </div>
+            )}
+          </div>
 
           {validationError && (
             <p className="text-xs text-rose-400 flex items-center gap-1">

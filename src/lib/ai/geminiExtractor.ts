@@ -193,7 +193,10 @@ CRITICAL INSTRUCTIONS:
 /**
  * Calls Gemini API with structured JSON output schema.
  */
-export async function extractPropertyWithGemini(pageContent: string): Promise<ExtractionResult> {
+export async function extractPropertyWithGemini(
+  pageContent: string,
+  customModel?: string
+): Promise<ExtractionResult> {
   const apiKey =
     process.env.GOOGLE_AI_API_KEY ||
     process.env.GEMINI_API_KEY ||
@@ -205,19 +208,11 @@ export async function extractPropertyWithGemini(pageContent: string): Promise<Ex
     );
   }
 
-  // Resolve model name (auto-upgrade deprecated models to gemini-3.8-flash)
-  let modelName =
-    process.env.GEMINI_MODEL ||
-    process.env.GOOGLE_AI_MODEL ||
-    'gemini-3.8-flash';
-
-  if (
-    modelName.includes('2.5') ||
-    modelName.includes('1.5') ||
-    modelName.includes('2.0')
-  ) {
-    modelName = 'gemini-3.8-flash';
-  }
+  // Model name passed directly from frontend text field, with fallback to env or default
+  const modelName =
+    (typeof customModel === 'string' && customModel.trim())
+      ? customModel.trim()
+      : (process.env.GEMINI_MODEL || process.env.GOOGLE_AI_MODEL || 'gemini-2.5-flash');
 
   let rawJson = '';
 

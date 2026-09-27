@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     // 3. Body validation
     const body = await request.json().catch(() => ({}));
-    const { url, rawText } = body;
+    const { url, rawText, model } = body;
 
     const hasRawText = typeof rawText === 'string' && rawText.trim().length >= 5;
     const hasUrl = typeof url === 'string' && url.trim().length > 0;
@@ -84,7 +84,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 6. Gemini AI Extraction
-    const aiResult = await extractPropertyWithGemini(textToAnalyze);
+    const customModel = typeof model === 'string' && model.trim() ? model.trim() : undefined;
+    const aiResult = await extractPropertyWithGemini(textToAnalyze, customModel);
 
     // 7. DB Lookup: Match City & Locality to system IDs
     let matchedCityId: string | null = null;
